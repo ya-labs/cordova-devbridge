@@ -21,7 +21,7 @@ async function setup({ allowWrites = false, globals, listDatabases, extraConfig 
   const base = `http://127.0.0.1:${server.port}`;
   const data = {
     'Param.db': { parametros: [{ CHAVE: 'URLE', VALOR: 'http://erp' }] },
-    'User_joao1.db': { CLIFOR: [{ CODCLI: 10, NOME: 'Mercado A' }, { CODCLI: 20, NOME: 'Mercado B' }] },
+    'User_joao1.db': { CLIENTES: [{ CODIGO: 10, NOME: 'Mercado A' }, { CODIGO: 20, NOME: 'Mercado B' }] },
   };
   const plugin = fakeSqlitePlugin(data);
   const appGlobals = typeof globals === 'function' ? globals(plugin) : globals;
@@ -66,8 +66,8 @@ test('API exige X-Devbridge (barra CSRF de outra página)', async () => {
 test('SQL de leitura usa a conexão global aberta pelo app', async () => {
   const s = await setup({ globals: (plugin) => ({ db: plugin.makeDb('User_joao1.db') }) });
   try {
-    const r = await s.api.sql({ sql: 'select * from CLIFOR', db: 'user' });
-    assert.deepEqual(r.columns, ['CODCLI', 'NOME']);
+    const r = await s.api.sql({ sql: 'select * from CLIENTES', db: 'user' });
+    assert.deepEqual(r.columns, ['CODIGO', 'NOME']);
     assert.equal(r.rowCount, 2);
     assert.equal(r.database, 'db');
     assert.deepEqual(s.plugin.opened, []);
@@ -82,7 +82,7 @@ test('sem global aberta: abre pelo nome, ou resolve o padrão via adb', async ()
     s.app.fireDeviceReady();
     const par = await s.api.sql({ sql: 'select * from parametros', db: 'par' });
     assert.equal(par.rows[0].VALOR, 'http://erp');
-    const user = await s.api.sql({ sql: 'select * from CLIFOR', db: 'user' });
+    const user = await s.api.sql({ sql: 'select * from CLIENTES', db: 'user' });
     assert.equal(user.database, 'User_joao1.db');
     assert.deepEqual(s.plugin.opened, ['Param.db', 'User_joao1.db']);
   } finally {
@@ -93,7 +93,7 @@ test('sem global aberta: abre pelo nome, ou resolve o padrão via adb', async ()
 test('padrão ambíguo pede --db explícito', async () => {
   const s = await setup({ listDatabases: async () => ['User_a.db', 'User_b.db'] });
   try {
-    await assert.rejects(s.api.sql({ sql: 'select * from CLIFOR', db: 'user' }), /vários bancos/);
+    await assert.rejects(s.api.sql({ sql: 'select * from CLIENTES', db: 'user' }), /vários bancos/);
   } finally {
     await teardown(s);
   }
@@ -102,19 +102,19 @@ test('padrão ambíguo pede --db explícito', async () => {
 test('escrita: recusada sem flag, sem allowWrites, e liberada com os dois (com histórico)', async () => {
   const off = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
   try {
-    await assert.rejects(off.api.sql({ sql: 'delete from CLIFOR', db: 'user' }), /recusada/);
-    await assert.rejects(off.api.sql({ sql: 'delete from CLIFOR', db: 'user', write: true }), /allowWrites/);
+    await assert.rejects(off.api.sql({ sql: 'delete from CLIENTES', db: 'user' }), /recusada/);
+    await assert.rejects(off.api.sql({ sql: 'delete from CLIENTES', db: 'user', write: true }), /allowWrites/);
   } finally {
     await teardown(off);
   }
 
   const on = await setup({ allowWrites: true, globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
   try {
-    const r = await on.api.sql({ sql: 'update CLIFOR set NOME = ? where rowid = ?', params: ['Novo', 2], db: 'user', write: true });
+    const r = await on.api.sql({ sql: 'update CLIENTES set NOME = ? where rowid = ?', params: ['Novo', 2], db: 'user', write: true });
     assert.equal(r.rowsAffected, 1);
-    assert.equal(on.data['User_joao1.db'].CLIFOR[1].NOME, 'Novo');
+    assert.equal(on.data['User_joao1.db'].CLIENTES[1].NOME, 'Novo');
     const hist = fs.readFileSync(path.join(on.config.stateDir, 'sql-history.log'), 'utf8');
-    assert.match(hist, /\tuser\tupdate CLIFOR set NOME = \? where rowid = \?\t\["Novo",2\]\tok rowsAffected=1\n$/);
+    assert.match(hist, /\tuser\tupdate CLIENTES set NOME = \? where rowid = \?\t\["Novo",2\]\tok rowsAffected=1\n$/);
   } finally {
     await teardown(on);
   }
@@ -125,10 +125,10 @@ test('readTransaction barra escrita mesmo se o filtro do servidor falhasse', asy
   try {
     // Fala direto com o app, pulando a checagem do servidor.
     await assert.rejects(
-      s.server.request('sql', { sql: 'delete from CLIFOR', params: [], write: false, db: { global: 'db', name: null } }),
+      s.server.request('sql', { sql: 'delete from CLIENTES', params: [], write: false, db: { global: 'db', name: null } }),
       /read-only/,
     );
-    assert.equal(s.data['User_joao1.db'].CLIFOR.length, 2);
+    assert.equal(s.data['User_joao1.db'].CLIENTES.length, 2);
   } finally {
     await teardown(s);
   }
@@ -138,9 +138,9 @@ test('tables e schema', async () => {
   const s = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
   try {
     const t = await s.api.tables('user');
-    assert.deepEqual(t.rows.map((r) => r.name), ['CLIFOR']);
-    const sc = await s.api.schema('user', 'CLIFOR');
-    assert.deepEqual(sc.columns.map((c) => c.name), ['CODCLI', 'NOME']);
+    assert.deepEqual(t.rows.map((r) => r.name), ['CLIENTES']);
+    const sc = await s.api.schema('user', 'CLIENTES');
+    assert.deepEqual(sc.columns.map((c) => c.name), ['CODIGO', 'NOME']);
     await assert.rejects(s.api.schema('user', 'x; drop'), /inválido/);
   } finally {
     await teardown(s);
@@ -202,7 +202,7 @@ test('status consulta o app; sem app conectado a API explica o motivo', async ()
   try {
     const st = await s.api.status();
     assert.equal(st.app.globals.db, true);
-    assert.equal(st.app.globals.dbpar, false);
+    assert.equal(st.app.globals.dbconfig, false);
     s.app.close();
     await until(() => s.server.clients.size === 0);
     await assert.rejects(s.api.sql({ sql: 'select 1', db: 'user' }), /Nenhum app conectado/);

@@ -15,21 +15,21 @@ const { table } = require('../src/format');
 
 test('sqlguard: leitura aceita', () => {
   for (const sql of [
-    'select * from CLIFOR',
+    'select * from CLIENTES',
     '  SELECT 1;',
     "select 'delete from x' as txt",
     '-- comentário\nselect count(*) from VISFEITA',
     'with t as (select 1) select * from t',
-    'pragma table_info(CLIFOR)',
+    'pragma table_info(CLIENTES)',
     'PRAGMA user_version',
-    'explain query plan select * from CLIFOR where CODCLI = 1',
+    'explain query plan select * from CLIENTES where CODIGO = 1',
   ]) assert.ok(isReadOnly(sql), sql);
 });
 
 test('sqlguard: escrita recusada sem --write', () => {
   for (const sql of [
-    'update CLIFOR set NOME = 1',
-    'delete from CLIFOR',
+    'update CLIENTES set NOME = 1',
+    'delete from CLIENTES',
     'insert into x values (1)',
     'drop table x',
     'with t as (select 1) delete from x',
@@ -108,10 +108,10 @@ test('config: carrega, normaliza bancos e resolve --db', () => {
 });
 
 test('glob de banco e tabela do terminal', () => {
-  const re = globToRegExp('PromotorVendas_*.db');
-  assert.ok(re.test('PromotorVendas_joao1.db'));
-  assert.ok(!re.test('PromotorVendas_joao1.db-journal'));
-  assert.ok(!re.test('PromotorVendasParam.db'));
+  const re = globToRegExp('MeuApp_*.db');
+  assert.ok(re.test('MeuApp_joao1.db'));
+  assert.ok(!re.test('MeuApp_joao1.db-journal'));
+  assert.ok(!re.test('MeuAppConfig.db'));
   const out = table(['a', 'b'], [{ a: 1, b: null }, { a: 'xyz', b: 'ok' }]);
   assert.match(out, /^a   │ b {3}\n/);
   assert.match(out, /NULL/);

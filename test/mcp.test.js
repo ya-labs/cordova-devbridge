@@ -19,7 +19,7 @@ test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async
   const cfgFile = path.join(root, 'devbridge.config.json');
   fs.writeFileSync(cfgFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(cfgFile, 'utf8')), port: server.port }));
 
-  const plugin = fakeSqlitePlugin({ 'User_x.db': { CLIFOR: [{ CODCLI: 1, NOME: 'A' }] } });
+  const plugin = fakeSqlitePlugin({ 'User_x.db': { CLIENTES: [{ CODIGO: 1, NOME: 'A' }] } });
   const app = runClient(`http://127.0.0.1:${server.port}`, { sqlitePlugin: plugin, globals: { db: plugin.makeDb('User_x.db') } });
   await until(() => server.clients.size === 1);
 
@@ -46,15 +46,15 @@ test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async
     assert.ok(names.includes('db_query'));
     assert.ok(!names.includes('db_exec'), 'db_exec só aparece com allowWrites');
 
-    const q = await rpc('tools/call', { name: 'db_query', arguments: { sql: 'select * from CLIFOR', db: 'user' } });
-    assert.match(q.result.content[0].text, /CODCLI │ NOME/);
+    const q = await rpc('tools/call', { name: 'db_query', arguments: { sql: 'select * from CLIENTES', db: 'user' } });
+    assert.match(q.result.content[0].text, /CODIGO │ NOME/);
     assert.ok(!q.result.isError);
 
-    const bad = await rpc('tools/call', { name: 'db_query', arguments: { sql: 'delete from CLIFOR', db: 'user' } });
+    const bad = await rpc('tools/call', { name: 'db_query', arguments: { sql: 'delete from CLIENTES', db: 'user' } });
     assert.equal(bad.result.isError, true);
     assert.match(bad.result.content[0].text, /recusada/);
 
-    const unknown = await rpc('tools/call', { name: 'db_exec', arguments: { sql: 'delete from CLIFOR' } });
+    const unknown = await rpc('tools/call', { name: 'db_exec', arguments: { sql: 'delete from CLIENTES' } });
     assert.equal(unknown.error.code, -32602);
 
     const reload = await rpc('tools/call', { name: 'app_reload', arguments: {} });

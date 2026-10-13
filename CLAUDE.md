@@ -1,6 +1,6 @@
 # cordova-devbridge: guia para agentes
 
-Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-de-Vendas, Pack-Tracking, Sales-Mobile). Usuários: Nícolas e Marco, ambos em Linux, com o celular via USB/adb. O uso está descrito no [README.md](README.md). Este arquivo registra as decisões e o que um agente precisa saber antes de mexer.
+Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em Linux com o celular via USB/adb. Contexto pessoal (apps, pessoas, memória) fica no `CLAUDE.local.md`, fora do git. O uso está descrito no [README.md](README.md). Este arquivo registra as decisões e o que um agente precisa saber antes de mexer.
 
 ## O que o projeto resolve
 
@@ -28,7 +28,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 
 - **Zero dependências.** Só Node 20+ e adb. Por isso a comunicação usa SSE + POST, e não WebSocket, e o MCP é escrito à mão.
 - **Patch só no `config.xml` gerado** (`platforms/android/app/src/main/res/xml/config.xml`), nunca no versionado. O cordova-android aceita um `<content src>` com esquema como URL inicial (`ConfigXmlParser.setStartUrl`). O acesso ao bridge segue o `<allow-navigation>` (`CordovaPlugin.shouldAllowBridgeAccess`). O próximo `cordova prepare` desfaz o patch, então nada vaza para o release.
-- **Resolução por arquivo:** primeiro `platform_www`, depois `www`. O Pack-Tracking tem `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
+- **Resolução por arquivo:** primeiro `platform_www`, depois `www`. Há app real com `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
 - **O client é injetado só em `www/index.html`.** Os templates do AngularJS também são `.html` e chegam por XHR. Ele entra como primeiro script do `<head>`, para capturar logs do boot e continuar recebendo reload mesmo se o app quebrar.
 - **O client é ES5** (`var`, `function`), para não depender da versão do WebView.
 - **Segurança do banco:**
@@ -38,7 +38,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
 - **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
-- **Bancos:** o client prefere a conexão global que o app já abriu (`db`, `dbpar`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
+- **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
 
 ## Convenções
 
@@ -60,7 +60,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
 - `npm test`: 25/25.
-- Contra um app real (Promotor-de-Vendas): os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
+- Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
 - No aparelho (Android 15), pelo pacote #4:
@@ -77,7 +77,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 - SQL pela conexão global aberta depois do login, e `pull-db` desse banco.
 - Console web contra o app no aparelho.
 - MCP registrado num Claude Code de verdade.
-- Pack-Tracking: falta criar o `devbridge.config.json` e testar. A config de exemplo está no README.
+- Um segundo app real, com um banco só.
 
 ## Situação atual
 
@@ -117,6 +117,4 @@ Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste
 
 ## Memória
 
-Projeto registrado na YABook com o escopo `["Agrosys", "cordova-devbridge"]`. Os aprendizados técnicos desta ferramenta vão para esse escopo, sem nome nem código de cliente.
-
-Os registros da sessão de criação ficaram no escopo de Ferramentas: `kn-fer-cordova-live-reload-content-src`, `kn-fer-cordova-js-android-trava-chrome-desktop` e o episódio `ep-fer-20261013-cordova-devbridge`. Complemente esses registros em vez de duplicá-los.
+Os registros de memória (escopo, ids) ficam no `CLAUDE.local.md`. Aprendizados técnicos desta ferramenta não levam nome de app, cliente ou pessoa.

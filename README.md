@@ -22,7 +22,7 @@ WebView ── http://localhost:8100 ─ adb reverse ─► devbridge start
 - **`devbuild`:** troca o `<content src>` **só no config.xml gerado** (`platforms/android/.../res/xml/config.xml`), passando a apontar para `http://localhost:8100/index.html`, e compila em debug. O `config.xml` versionado não muda. O próximo `cordova build` ou `cordova run` normal desfaz a troca.
 - **Fusão de pastas:** os arquivos vêm de `platform_www` (`cordova.js` e o JS dos plugins) com fallback para `www`. A fusão é por arquivo, então pastas com o mesmo nome nas duas árvores convivem.
 - **Injeção do client:** acontece só no `www/index.html`. Os templates `.html` do AngularJS chegam intactos.
-- **Banco:** o client usa a conexão que o próprio app já abriu (a variável global `db` / `dbpar`). Se ela ainda não estiver aberta, por exemplo antes do login, abre o arquivo pelo nome. Quando o nome tem `*`, resolve o arquivo via `adb run-as`.
+- **Banco:** o client usa a conexão que o próprio app já abriu (uma variável global como `db`). Se ela ainda não estiver aberta, por exemplo antes do login, abre o arquivo pelo nome. Quando o nome tem `*`, resolve o arquivo via `adb run-as`.
 
 ## Instalação
 
@@ -40,29 +40,21 @@ Requisitos no app:
 
 Crie `devbridge.config.json` na raiz do app (`devbridge init` gera um esqueleto) e acrescente `.devbridge/` ao `.gitignore`.
 
-Promotor-de-Vendas:
+Exemplo com dois bancos: um por usuário (o nome tem `*`) e um de configuração:
 ```json
 {
-  "package": "com.agrosys.apppromvendas",
+  "package": "com.exemplo.meuapp",
   "port": 8100,
   "allowWrites": true,
   "defaultDb": "user",
   "databases": {
-    "user": { "global": "db", "name": "PromotorVendas_*.db" },
-    "par": { "global": "dbpar", "name": "PromotorVendasParam.db" }
+    "user": { "global": "db", "name": "MeuApp_*.db" },
+    "config": { "global": "dbconfig", "name": "MeuAppConfig.db" }
   }
 }
 ```
 
-Pack-Tracking:
-```json
-{
-  "package": "com.agrosys.appcargasprodutos",
-  "port": 8100,
-  "allowWrites": true,
-  "databases": { "main": { "global": "db", "name": "Agrosys_PackTracking.db" } }
-}
-```
+Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 
 | Campo | Significado |
 |---|---|
@@ -91,16 +83,16 @@ O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev
 
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
 
-Se o boot do app depende da rota inicial (por exemplo, um `otherwise('/Aguarde')` que espera o `deviceready` e abre o SQLite antes de liberar as outras telas), o reload na mesma tela roda o controller antes da hora: aparecem `{{expressões}}` cruas e `executeSql` de `null` nos logs. Nesse caso, use `"reloadKeepRoute": false`. Para sair da tela quebrada sem reinstalar nada, rode `devbridge launch`.
+Se o boot do app depende da rota inicial (por exemplo, um `otherwise('/inicio')` que espera o `deviceready` e abre o SQLite antes de liberar as outras telas), o reload na mesma tela roda o controller antes da hora: aparecem `{{expressões}}` cruas e `executeSql` de `null` nos logs. Nesse caso, use `"reloadKeepRoute": false`. Para sair da tela quebrada sem reinstalar nada, rode `devbridge launch`.
 
 ```bash
 devbridge status                                   # app conectado, tela, conexões abertas
 devbridge logs -f --level warn,error               # console do app ao vivo
-devbridge sql "select * from CLIFOR limit 5"       # leitura (banco padrão)
-devbridge sql "select * from parametros" --db par
-devbridge sql "update CLIFOR set NOME = ? where rowid = ?" --params '["Teste",3]' --write
+devbridge sql "select * from clientes limit 5"     # leitura (banco padrão)
+devbridge sql "select * from parametros" --db config
+devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
 devbridge tables
-devbridge schema PROVISITA
+devbridge schema pedidos
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
 devbridge screenshot
 ```

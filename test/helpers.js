@@ -21,7 +21,7 @@ function makeApp(extraConfig = {}) {
   const config = {
     package: 'com.teste.app',
     port: 0,
-    databases: { par: { global: 'dbpar', name: 'Param.db' }, user: { global: 'db', name: 'User_*.db' } },
+    databases: { par: { global: 'dbconfig', name: 'Param.db' }, user: { global: 'db', name: 'User_*.db' } },
     ...extraConfig,
   };
   fs.writeFileSync(path.join(root, 'devbridge.config.json'), JSON.stringify(config));
