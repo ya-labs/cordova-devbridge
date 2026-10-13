@@ -1,0 +1,16 @@
+{
+  "name": "cordova-devbridge",
+  "version": "0.1.0",
+  "description": "Live reload, logs e acesso ao SQLite de apps Cordova rodando no celular (via adb), com servidor MCP para agentes de IA.",
+  "license": "UNLICENSED",
+  "private": true,
+  "bin": {
+    "devbridge": "bin/devbridge.js"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
+  }
+}

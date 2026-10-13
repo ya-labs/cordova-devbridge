@@ -1,0 +1,368 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Devbridge Console</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --line: #dfe3e8; --text: #1d2430; --muted: #687385;
+    --accent: #2563eb; --accent-text: #ffffff; --danger: #c2410c; --ok: #15803d; --warn: #a16207;
+    --code: #f0f2f5; --hover: #eef3ff; --edit: #fff7d6;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151b; --panel: #1a1e26; --line: #2c323d; --text: #e3e7ee; --muted: #8b95a5;
+      --accent: #5b8def; --accent-text: #0d1117; --danger: #f97316; --ok: #4ade80; --warn: #facc15;
+      --code: #222833; --hover: #222b3d; --edit: #3a3314;
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.4 system-ui, sans-serif; display: grid; grid-template-rows: auto 1fr; }
+  header { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line); }
+  header h1 { font-size: 15px; margin: 0 8px 0 0; }
+  .pill { display: inline-flex; align-items: center; gap: 6px; padding: 3px 10px; border-radius: 999px; background: var(--code); color: var(--muted); font-size: 12px; max-width: 420px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--muted); flex: none; }
+  .dot.on { background: var(--ok); }
+  .spacer { flex: 1; }
+  button, select, input, textarea { font: inherit; color: inherit; }
+  button { background: var(--code); border: 1px solid var(--line); border-radius: 6px; padding: 5px 12px; cursor: pointer; }
+  button:hover { border-color: var(--accent); }
+  button.primary { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+  select, input[type=text] { background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 4px 8px; }
+  label.write { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; }
+  label.write.on { color: var(--danger); font-weight: 600; }
+  main { display: grid; grid-template-columns: 230px 1fr; grid-template-rows: 1fr 220px; min-height: 0; }
+  aside { grid-row: 1 / 3; border-right: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  aside input { margin: 10px; }
+  #tables { list-style: none; margin: 0; padding: 0 0 10px; overflow: auto; }
+  #tables li { padding: 4px 14px; cursor: pointer; font-family: var(--mono); font-size: 12.5px; }
+  #tables li:hover, #tables li.sel { background: var(--hover); }
+  #tables li small { color: var(--muted); }
+  section.work { display: flex; flex-direction: column; min-height: 0; min-width: 0; }
+  .editor { padding: 10px 16px 0; }
+  textarea { width: 100%; min-height: 90px; resize: vertical; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; padding: 8px; font-family: var(--mono); font-size: 13px; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding: 8px 16px; }
+  #history { flex: 0 1 260px; min-width: 0; max-width: 100%; }
+  #info { color: var(--muted); font-size: 12.5px; min-width: 0; overflow-wrap: anywhere; }
+  #info.err { color: var(--danger); white-space: pre-wrap; }
+  .grid-wrap { flex: 1; overflow: auto; margin: 0 16px 10px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel); }
+  table { border-collapse: collapse; font-family: var(--mono); font-size: 12.5px; min-width: 100%; }
+  th, td { border-bottom: 1px solid var(--line); border-right: 1px solid var(--line); padding: 4px 8px; text-align: left; white-space: nowrap; max-width: 360px; overflow: hidden; text-overflow: ellipsis; }
+  th { position: sticky; top: 0; background: var(--code); font-weight: 600; z-index: 1; }
+  td.null { color: var(--muted); font-style: italic; }
+  td.rid { color: var(--muted); }
+  tr:hover td { background: var(--hover); }
+  td.editable { cursor: text; }
+  td.editing { background: var(--edit); padding: 0; }
+  td.editing input { width: 100%; border: 0; background: transparent; padding: 4px 8px; font: inherit; outline: 2px solid var(--accent); }
+  .logs { grid-column: 2; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
+  .logs .bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }
+  .logs h2 { font-size: 13px; margin: 0; }
+  #logs { flex: 1; overflow: auto; margin: 0; padding: 6px 16px; font-family: var(--mono); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+  #logs .error { color: var(--danger); }
+  #logs .warn { color: var(--warn); }
+  #logs .t { color: var(--muted); }
+  #shot { position: fixed; inset: 0; background: rgba(0,0,0,.6); display: none; align-items: center; justify-content: center; z-index: 5; }
+  #shot img { max-height: 92vh; max-width: 92vw; border-radius: 8px; }
+  @media (max-width: 760px) {
+    main { grid-template-columns: 1fr; grid-template-rows: 160px 1fr 200px; }
+    aside { grid-row: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+    .logs { grid-column: 1; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <h1>Devbridge</h1>
+  <span class="pill" id="app"><span class="dot" id="dot"></span><span id="appText">verificando…</span></span>
+  <span class="spacer"></span>
+  <select id="db" title="Banco"></select>
+  <label class="write" id="writeLabel" title="Permite INSERT/UPDATE/DELETE e edição da grade"><input type="checkbox" id="write"> escrita</label>
+  <button id="reload">Recarregar app</button>
+  <button id="screenshot">Screenshot</button>
+</header>
+<main>
+  <aside>
+    <input type="text" id="filter" placeholder="Filtrar tabelas">
+    <ul id="tables"></ul>
+  </aside>
+  <section class="work">
+    <div class="editor"><textarea id="sql" spellcheck="false" placeholder="SELECT * FROM ... (Ctrl+Enter executa)"></textarea></div>
+    <div class="bar">
+      <button class="primary" id="run">Executar</button>
+      <select id="history" title="Histórico"><option value="">Histórico</option></select>
+      <span id="info"></span>
+    </div>
+    <div class="grid-wrap"><table id="grid"></table></div>
+  </section>
+  <section class="logs">
+    <div class="bar">
+      <h2>Console do app</h2>
+      <select id="level"><option value="">todos</option><option value="warn,error">warn + error</option><option value="error">error</option></select>
+      <button id="clearLogs">Limpar</button>
+      <label class="write"><input type="checkbox" id="follow" checked> rolar</label>
+    </div>
+    <pre id="logs"></pre>
+  </section>
+</main>
+<div id="shot"><img alt="Tela do celular"></div>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var state = { status: null, browse: null, logSince: 0, tables: [] };
+
+  function api(method, route, body) {
+    return fetch('/__devbridge/api' + route, {
+      method: method,
+      headers: Object.assign({ 'X-Devbridge': '1' }, body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (res) {
+      if (route === '/screenshot' && res.ok) return res.blob();
+      return res.json().then(function (data) {
+        if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
+        return data;
+      });
+    });
+  }
+
+  function store(key, value) {
+    try {
+      if (value === undefined) return JSON.parse(localStorage.getItem('devbridge.' + key));
+      localStorage.setItem('devbridge.' + key, JSON.stringify(value));
+    } catch (e) { return null; }
+  }
+
+  function info(text, isErr) {
+    $('info').textContent = text;
+    $('info').className = isErr ? 'err' : '';
+  }
+
+  function quoteIdent(name) { return '"' + String(name).replace(/"/g, '""') + '"'; }
+
+  // ---- status / bancos ----
+  function loadStatus() {
+    return api('GET', '/status').then(function (s) {
+      var first = !state.status;
+      state.status = s;
+      var app = s.app;
+      $('dot').className = 'dot' + (app && !app.error ? ' on' : '');
+      $('appText').textContent = app ? (app.error ? 'conectado, sem resposta' : (app.href || '').replace(/^https?:\/\/[^/]+/, '')) : 'app desconectado';
+      $('app').title = app ? JSON.stringify(app, null, 2) : 'Abra o app dev no celular';
+      if (first) {
+        var dbs = Object.keys(s.server.databases);
+        $('db').innerHTML = dbs.map(function (d) { return '<option>' + d + '</option>'; }).join('');
+        var saved = store('db');
+        $('db').value = dbs.indexOf(saved) >= 0 ? saved : (s.server.defaultDb || dbs[0] || '');
+        if (!s.server.allowWrites) {
+          $('write').disabled = true;
+          $('writeLabel').title = 'Desligada: defina "allowWrites": true no devbridge.config.json';
+        }
+        loadTables();
+      }
+    }).catch(function (e) {
+      $('dot').className = 'dot';
+      $('appText').textContent = 'servidor fora do ar';
+    });
+  }
+
+  function loadTables() {
+    api('GET', '/tables?db=' + encodeURIComponent($('db').value)).then(function (r) {
+      state.tables = r.rows;
+      renderTables();
+    }).catch(function (e) {
+      state.tables = [];
+      renderTables();
+      info(e.message, true);
+    });
+  }
+
+  function renderTables() {
+    var f = $('filter').value.toLowerCase();
+    $('tables').innerHTML = '';
+    state.tables.filter(function (t) { return t.name.toLowerCase().indexOf(f) >= 0; }).forEach(function (t) {
+      var li = document.createElement('li');
+      li.textContent = t.name;
+      if (t.type === 'view') li.insertAdjacentHTML('beforeend', ' <small>view</small>');
+      if (state.browse && state.browse.table === t.name) li.className = 'sel';
+      li.onclick = function () { browse(t.name); };
+      $('tables').appendChild(li);
+    });
+  }
+
+  // ---- SQL ----
+  function browse(table) {
+    state.browse = { table: table };
+    $('sql').value = 'SELECT rowid AS __rowid, * FROM ' + quoteIdent(table) + ' LIMIT 200';
+    renderTables();
+    run(true);
+  }
+
+  function run(fromBrowse) {
+    var sql = $('sql').value.trim();
+    if (!sql) return;
+    if (!fromBrowse) state.browse = null;
+    renderTables();
+    info('executando…');
+    var write = $('write').checked;
+    api('POST', '/sql', { sql: sql, db: $('db').value, write: write && !/^\s*(select|with|pragma|explain)\b/i.test(sql), maxRows: 2000 })
+      .then(function (r) {
+        renderGrid(r);
+        var parts = [r.rowCount + ' linha(s)'];
+        if (r.truncated) parts.push('mostrando ' + r.rows.length);
+        if (r.rowsAffected !== undefined) parts.push('afetadas: ' + r.rowsAffected);
+        parts.push(r.database, r.ms + ' ms');
+        info(parts.join(' · '));
+        remember(sql);
+        if (r.rowsAffected !== undefined && /\b(create|drop|alter)\b/i.test(sql)) loadTables();
+      })
+      .catch(function (e) { info(e.message, true); });
+  }
+
+  function renderGrid(r) {
+    var grid = $('grid');
+    grid.innerHTML = '';
+    if (!r.columns || !r.columns.length) return;
+    var editable = !!(state.browse && r.columns[0] === '__rowid');
+    var thead = grid.createTHead().insertRow();
+    r.columns.forEach(function (c) {
+      var th = document.createElement('th');
+      th.textContent = c === '__rowid' ? 'rowid' : c;
+      thead.appendChild(th);
+    });
+    var tbody = grid.createTBody();
+    r.rows.forEach(function (row) {
+      var tr = tbody.insertRow();
+      r.columns.forEach(function (c) {
+        var td = tr.insertCell();
+        var v = row[c];
+        setCell(td, v);
+        if (c === '__rowid') td.classList.add('rid');
+        else if (editable) {
+          td.classList.add('editable');
+          td.title = 'Duplo clique para editar (escrita ligada). Digite NULL para nulo.';
+          td.ondblclick = function () { editCell(td, row.__rowid, c, row[c], function (nv) { row[c] = nv; }); };
+        }
+      });
+    });
+  }
+
+  function setCell(td, v) {
+    td.classList.toggle('null', v === null || v === undefined);
+    td.textContent = v === null || v === undefined ? 'NULL' : String(v);
+  }
+
+  function editCell(td, rowid, col, value, commit) {
+    if (!$('write').checked) return info('Ligue "escrita" para editar a grade.', true);
+    if (td.classList.contains('editing')) return;
+    var input = document.createElement('input');
+    input.value = value === null || value === undefined ? 'NULL' : String(value);
+    td.textContent = '';
+    td.classList.add('editing');
+    td.appendChild(input);
+    input.focus();
+    input.select();
+    var done = false;
+    function finish(save) {
+      if (done) return;
+      done = true;
+      td.classList.remove('editing');
+      if (!save || input.value === String(value === null ? 'NULL' : value)) return setCell(td, value);
+      var nv = input.value === 'NULL' ? null : input.value;
+      var sql = 'UPDATE ' + quoteIdent(state.browse.table) + ' SET ' + quoteIdent(col) + ' = ? WHERE rowid = ?';
+      setCell(td, nv);
+      api('POST', '/sql', { sql: sql, params: [nv, rowid], db: $('db').value, write: true })
+        .then(function (r) {
+          commit(nv);
+          info('UPDATE ' + state.browse.table + '.' + col + ' (rowid ' + rowid + '): afetadas ' + r.rowsAffected);
+        })
+        .catch(function (e) { setCell(td, value); info(e.message, true); });
+    }
+    input.onkeydown = function (ev) {
+      if (ev.key === 'Enter') finish(true);
+      if (ev.key === 'Escape') finish(false);
+    };
+    input.onblur = function () { finish(false); };
+  }
+
+  function remember(sql) {
+    var h = (store('history') || []).filter(function (s) { return s !== sql; });
+    h.unshift(sql);
+    store('history', h.slice(0, 30));
+    renderHistory();
+  }
+
+  function renderHistory() {
+    var h = store('history') || [];
+    $('history').innerHTML = '<option value="">Histórico</option>' + h.map(function (s, i) {
+      var label = s.replace(/\s+/g, ' ');
+      return '<option value="' + i + '">' + label.slice(0, 80).replace(/&/g, '&amp;').replace(/</g, '&lt;') + '</option>';
+    }).join('');
+  }
+
+  // ---- logs ----
+  function pollLogs() {
+    var level = $('level').value;
+    api('GET', '/logs?since=' + state.logSince + (level ? '&level=' + level : '')).then(function (r) {
+      state.logSince = r.last;
+      if (!r.entries.length) return;
+      var box = $('logs');
+      var frag = document.createDocumentFragment();
+      r.entries.forEach(function (e) {
+        var line = document.createElement('div');
+        line.className = e.level;
+        var t = document.createElement('span');
+        t.className = 't';
+        t.textContent = new Date(e.ts).toTimeString().slice(0, 8) + ' ';
+        line.appendChild(t);
+        line.appendChild(document.createTextNode(e.msg));
+        frag.appendChild(line);
+      });
+      box.appendChild(frag);
+      while (box.childNodes.length > 3000) box.removeChild(box.firstChild);
+      if ($('follow').checked) box.scrollTop = box.scrollHeight;
+    }).catch(function () {});
+  }
+
+  // ---- eventos ----
+  $('run').onclick = function () { run(false); };
+  $('sql').onkeydown = function (ev) {
+    if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); run(false); }
+  };
+  $('db').onchange = function () { store('db', $('db').value); state.browse = null; loadTables(); };
+  $('filter').oninput = renderTables;
+  $('write').onchange = function () { $('writeLabel').classList.toggle('on', $('write').checked); };
+  $('history').onchange = function () {
+    var h = store('history') || [];
+    if ($('history').value !== '') $('sql').value = h[Number($('history').value)];
+    $('history').value = '';
+  };
+  $('reload').onclick = function () {
+    api('POST', '/reload').then(function (r) { info(r.apps ? 'reload enviado' : 'nenhum app conectado', !r.apps); });
+  };
+  $('screenshot').onclick = function () {
+    info('capturando…');
+    api('GET', '/screenshot').then(function (blob) {
+      var img = $('shot').querySelector('img');
+      if (img.src) URL.revokeObjectURL(img.src);
+      img.src = URL.createObjectURL(blob);
+      $('shot').style.display = 'flex';
+      info('');
+    }).catch(function (e) { info(e.message, true); });
+  };
+  $('shot').onclick = function () { $('shot').style.display = 'none'; };
+  $('level').onchange = function () { $('logs').textContent = ''; state.logSince = 0; pollLogs(); };
+  $('clearLogs').onclick = function () { $('logs').textContent = ''; };
+
+  renderHistory();
+  loadStatus();
+  pollLogs();
+  setInterval(loadStatus, 3000);
+  setInterval(pollLogs, 1000);
+})();
+</script>
+</body>
+</html>
