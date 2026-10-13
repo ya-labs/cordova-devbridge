@@ -9,6 +9,9 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android:
 
 Não tem dependências: é Node 20+ puro, mais o `adb`.
 
+
+Para instalar numa máquina nova e configurar um app do zero (pré-requisitos, descobrir os bancos, `reloadRestore`, MCP e solução de problemas), siga o **[manual](docs/MANUAL.md)**.
+
 ## Como funciona
 
 ```

@@ -22,6 +22,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 | `src/adb.js` | reverse, `run-as`, screencap, install |
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
 | `src/ui/index.html` | console web autocontido (sem CDN) |
+| `docs/MANUAL.md` | instalação e configuração de um app do zero, na ordem dos passos; solução de problemas. Mantenha em sincronia com o README e o código |
 | `test/` | `units`, `e2e` (o client real em `node:vm`), `mcp` (processo real por stdio) e `devbuild` (decisão de abrir o app) |
 
 ## Decisões (não reverter sem motivo)
@@ -96,7 +97,8 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
     - a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo);
     - o redirecionamento do navegador do PC para o console;
     - incluir e excluir registros na grade do console (pedido da pessoa durante a validação);
-    - `reloadRestore` e a camada "Recarregando…" (pedido da pessoa: o reload de JS não pode voltar ao login). Validado no aparelho pela pessoa.
+    - `reloadRestore` e a camada "Recarregando…" (pedido da pessoa: o reload de JS não pode voltar ao login). Validado no aparelho pela pessoa;
+    - `docs/MANUAL.md` com instalação, configuração de app novo, `reloadRestore`, MCP e solução de problemas.
 - A UI não tem teste automatizado de clique. A inclusão e a exclusão foram conferidas num Chrome headless via CDP, contra o app falso do `test/helpers.js`. Os testes de API cobrem as instruções que a grade envia.
 - Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
