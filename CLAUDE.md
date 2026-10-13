@@ -61,7 +61,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 26/26 (o teste do index cobre o redirecionamento).
+- `npm test`: 27/27 (o teste do index cobre o redirecionamento).
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
@@ -90,7 +90,12 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 - Issue pacote #4 ("Validação do devbridge em app real no aparelho"), branch `4-validacao-app-real`:
   - reúne as correções que a validação revelar, cada uma num commit documentado;
   - o PR sai com merge commit;
-  - entregas: #3 (`reloadKeepRoute`) e a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo).
+  - entregas:
+    - #3 (`reloadKeepRoute`);
+    - a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo);
+    - o redirecionamento do navegador do PC para o console;
+    - incluir e excluir registros na grade do console (pedido da pessoa durante a validação).
+- A UI não tem teste automatizado de clique. A inclusão e a exclusão foram conferidas num Chrome headless via CDP, contra o app falso do `test/helpers.js`. Os testes de API cobrem as instruções que a grade envia.
 - Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
   - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);

@@ -58,6 +58,13 @@
   td.editable { cursor: text; }
   td.editing { background: var(--edit); padding: 0; }
   td.editing input { width: 100%; border: 0; background: transparent; padding: 4px 8px; font: inherit; outline: 2px solid var(--accent); }
+  td.act { width: 1%; padding: 2px 4px; }
+  td.act button { padding: 0 6px; font-size: 12px; line-height: 20px; }
+  td.act button.del { color: var(--danger); }
+  tr.new td { background: var(--edit); }
+  tr.new td input { width: 100%; min-width: 80px; border: 0; background: transparent; padding: 4px 4px; font: inherit; }
+  tr.new td input:focus { outline: 2px solid var(--accent); }
+  [hidden] { display: none !important; }
   .logs { grid-column: 2; border-top: 1px solid var(--line); background: var(--panel); display: flex; flex-direction: column; min-height: 0; }
   .logs .bar { padding: 6px 16px; border-bottom: 1px solid var(--line); }
   .logs h2 { font-size: 13px; margin: 0; }
@@ -93,6 +100,7 @@
     <div class="editor"><textarea id="sql" spellcheck="false" placeholder="SELECT * FROM ... (Ctrl+Enter executa)"></textarea></div>
     <div class="bar">
       <button class="primary" id="run">Executar</button>
+      <button id="addRow" hidden title="Incluir registro na tabela aberta (escrita ligada)">+ Registro</button>
       <select id="history" title="Histórico"><option value="">Histórico</option></select>
       <span id="info"></span>
     </div>
@@ -113,7 +121,7 @@
 (function () {
   'use strict';
   var $ = function (id) { return document.getElementById(id); };
-  var state = { status: null, browse: null, logSince: 0, tables: [] };
+  var state = { status: null, browse: null, columns: null, logSince: 0, tables: [] };
 
   function api(method, route, body) {
     return fetch('/__devbridge/api' + route, {
@@ -201,7 +209,7 @@
     run(true);
   }
 
-  function run(fromBrowse) {
+  function run(fromBrowse, note) {
     var sql = $('sql').value.trim();
     if (!sql) return;
     if (!fromBrowse) state.browse = null;
@@ -215,8 +223,8 @@
         if (r.truncated) parts.push('mostrando ' + r.rows.length);
         if (r.rowsAffected !== undefined) parts.push('afetadas: ' + r.rowsAffected);
         parts.push(r.database, r.ms + ' ms');
-        info(parts.join(' · '));
-        remember(sql);
+        info((note ? note + ' · ' : '') + parts.join(' · '));
+        if (!note) remember(sql);
         if (r.rowsAffected !== undefined && /\b(create|drop|alter)\b/i.test(sql)) loadTables();
       })
       .catch(function (e) { info(e.message, true); });
@@ -225,9 +233,16 @@
   function renderGrid(r) {
     var grid = $('grid');
     grid.innerHTML = '';
+    state.columns = null;
+    $('addRow').hidden = true;
     if (!r.columns || !r.columns.length) return;
     var editable = !!(state.browse && r.columns[0] === '__rowid');
     var thead = grid.createTHead().insertRow();
+    if (editable) {
+      state.columns = r.columns.filter(function (c) { return c !== '__rowid'; });
+      $('addRow').hidden = false;
+      thead.appendChild(document.createElement('th'));
+    }
     r.columns.forEach(function (c) {
       var th = document.createElement('th');
       th.textContent = c === '__rowid' ? 'rowid' : c;
@@ -236,6 +251,16 @@
     var tbody = grid.createTBody();
     r.rows.forEach(function (row) {
       var tr = tbody.insertRow();
+      if (editable) {
+        var act = tr.insertCell();
+        act.className = 'act';
+        var del = document.createElement('button');
+        del.className = 'del';
+        del.textContent = '✕';
+        del.title = 'Excluir registro (escrita ligada)';
+        del.onclick = function () { deleteRow(row.__rowid); };
+        act.appendChild(del);
+      }
       r.columns.forEach(function (c) {
         var td = tr.insertCell();
         var v = row[c];
@@ -288,6 +313,71 @@
     input.onblur = function () { finish(false); };
   }
 
+  // A grade é recarregada depois de incluir/excluir: rowid e valores padrão vêm do banco.
+  function writeAndRefresh(sql, params, label) {
+    api('POST', '/sql', { sql: sql, params: params, db: $('db').value, write: true })
+      .then(function (r) {
+        run(true, label + ': afetadas ' + r.rowsAffected);
+      })
+      .catch(function (e) { info(e.message, true); });
+  }
+
+  function deleteRow(rowid) {
+    if (!$('write').checked) return info('Ligue "escrita" para excluir registros.', true);
+    var table = state.browse.table;
+    if (!confirm('Excluir o registro rowid ' + rowid + ' de ' + table + '?')) return;
+    writeAndRefresh('DELETE FROM ' + quoteIdent(table) + ' WHERE rowid = ?', [rowid], 'DELETE ' + table + ' (rowid ' + rowid + ')');
+  }
+
+  // Campo vazio fica de fora do INSERT (vale o DEFAULT/autoincremento); "NULL" grava nulo.
+  function addRow() {
+    if (!$('write').checked) return info('Ligue "escrita" para incluir registros.', true);
+    var tbody = $('grid').tBodies[0] || $('grid').createTBody();
+    if (tbody.querySelector('tr.new')) return tbody.querySelector('tr.new input').focus();
+    var table = state.browse.table;
+    var tr = tbody.insertRow(0);
+    tr.className = 'new';
+    var act = tr.insertCell();
+    act.className = 'act';
+    var save = document.createElement('button');
+    save.textContent = '✓';
+    save.title = 'Salvar (Enter)';
+    var cancel = document.createElement('button');
+    cancel.textContent = '✕';
+    cancel.title = 'Cancelar (Esc)';
+    act.appendChild(save);
+    act.appendChild(cancel);
+    var rid = tr.insertCell();
+    rid.className = 'rid';
+    rid.textContent = 'novo';
+    var inputs = state.columns.map(function (c) {
+      var input = document.createElement('input');
+      input.placeholder = 'padrão';
+      input.title = c + ': vazio usa o valor padrão; NULL grava nulo';
+      tr.insertCell().appendChild(input);
+      input.onkeydown = function (ev) {
+        if (ev.key === 'Enter') commit();
+        if (ev.key === 'Escape') tr.remove();
+      };
+      return input;
+    });
+    function commit() {
+      var cols = [], params = [];
+      state.columns.forEach(function (c, i) {
+        if (inputs[i].value === '') return;
+        cols.push(quoteIdent(c));
+        params.push(inputs[i].value === 'NULL' ? null : inputs[i].value);
+      });
+      var sql = cols.length
+        ? 'INSERT INTO ' + quoteIdent(table) + ' (' + cols.join(', ') + ') VALUES (' + cols.map(function () { return '?'; }).join(', ') + ')'
+        : 'INSERT INTO ' + quoteIdent(table) + ' DEFAULT VALUES';
+      writeAndRefresh(sql, params, 'INSERT ' + table);
+    }
+    save.onclick = commit;
+    cancel.onclick = function () { tr.remove(); };
+    if (inputs[0]) inputs[0].focus();
+  }
+
   function remember(sql) {
     var h = (store('history') || []).filter(function (s) { return s !== sql; });
     h.unshift(sql);
@@ -329,6 +419,7 @@
 
   // ---- eventos ----
   $('run').onclick = function () { run(false); };
+  $('addRow').onclick = addRow;
   $('sql').onkeydown = function (ev) {
     if (ev.key === 'Enter' && (ev.ctrlKey || ev.metaKey)) { ev.preventDefault(); run(false); }
   };

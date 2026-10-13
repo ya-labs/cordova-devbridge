@@ -54,6 +54,19 @@ function fakeSqlitePlugin(data) {
       row[m[2]] = params[0];
       return { rows: [], rowsAffected: 1 };
     }
+    m = s.match(/^insert\s+into\s+"?(\w+)"?\s+(?:default\s+values|\(([^)]*)\)\s+values)/i);
+    if (m) {
+      const cols = m[2] ? m[2].split(',').map((c) => c.trim().replace(/"/g, '')) : [];
+      const row = {};
+      cols.forEach((c, i) => (row[c] = params[i]));
+      tables[m[1]].push(row);
+      return { rows: [], rowsAffected: 1 };
+    }
+    m = s.match(/^delete\s+from\s+"?(\w+)"?\s+where\s+rowid\s*=\s*\?/i);
+    if (m) {
+      tables[m[1]].splice(params[0] - 1, 1);
+      return { rows: [], rowsAffected: 1 };
+    }
     m = s.match(/^delete\s+from\s+(\w+)/i);
     if (m) {
       const n = tables[m[1]].length;

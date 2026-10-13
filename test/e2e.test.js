@@ -238,3 +238,30 @@ test('aba do PC conectada depois não rouba o app que já disparou deviceready',
     await teardown(s);
   }
 });
+
+test('console: INSERT e DELETE por rowid que a grade envia passam só com escrita', async () => {
+  const s = await setup({ allowWrites: true, globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
+  try {
+    const ins = 'INSERT INTO "CLIENTES" ("CODIGO", "NOME") VALUES (?, ?)';
+    await assert.rejects(s.api.sql({ sql: ins, params: ['30', 'Mercado C'], db: 'user' }), /recusada/);
+    await s.api.sql({ sql: ins, params: ['30', 'Mercado C'], db: 'user', write: true });
+    await s.api.sql({ sql: 'INSERT INTO "CLIENTES" DEFAULT VALUES', db: 'user', write: true });
+    let rows = s.data['User_joao1.db'].CLIENTES;
+    assert.equal(rows.length, 4);
+    assert.deepEqual(rows[2], { CODIGO: '30', NOME: 'Mercado C' });
+
+    const del = 'DELETE FROM "CLIENTES" WHERE rowid = ?';
+    await assert.rejects(s.api.sql({ sql: del, params: [1], db: 'user' }), /recusada/);
+    const r = await s.api.sql({ sql: del, params: [1], db: 'user', write: true });
+    assert.equal(r.rowsAffected, 1);
+    rows = s.data['User_joao1.db'].CLIENTES;
+    assert.equal(rows.length, 3);
+    assert.equal(rows[0].NOME, 'Mercado B');
+
+    const hist = fs.readFileSync(path.join(s.config.stateDir, 'sql-history.log'), 'utf8');
+    assert.match(hist, /INSERT INTO "CLIENTES" DEFAULT VALUES/);
+    assert.match(hist, /DELETE FROM "CLIENTES" WHERE rowid = \?\t\[1\]/);
+  } finally {
+    await teardown(s);
+  }
+});

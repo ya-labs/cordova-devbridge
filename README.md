@@ -97,7 +97,12 @@ devbridge pull-db --db user                        # copia o .db para .devbridge
 devbridge screenshot
 ```
 
-**Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, um duplo clique na célula edita o valor: Enter grava, Esc cancela, e `NULL` grava nulo. Ctrl+Enter executa o SQL.
+**Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, a grade da tabela aberta permite:
+- **editar:** duplo clique na célula; Enter grava, Esc cancela, e `NULL` grava nulo;
+- **incluir:** "+ Registro" abre uma linha nova no topo; campo vazio usa o valor padrão da coluna (e o autoincremento), e `NULL` grava nulo; Enter ou ✓ salva;
+- **excluir:** o ✕ da linha apaga pelo `rowid`, depois de confirmar.
+
+Ctrl+Enter executa o SQL.
 
 No PC, a raiz `http://localhost:8100/` redireciona para o console. O app em si trava no Chrome do PC, porque o `cordova.js` usa `prompt()` como ponte nativa, e essa aba travada derruba junto as outras abas do mesmo site. Para abrir o app mesmo assim, use `/?app`. Mesmo com essa aba aberta, SQL e status continuam indo para o celular, porque o servidor prefere o client que disparou `deviceready`.
 
