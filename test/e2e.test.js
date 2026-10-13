@@ -332,3 +332,33 @@ test('sem reloadRestore: a camada some no deviceready e restore.js responde 404'
     await teardown(s);
   }
 });
+
+test('logs com objeto levam args estruturados (circular, undefined, função) e mantêm msg', async () => {
+  const s = await setup();
+  try {
+    const obj = { id: 3, nome: 'Loja', itens: [1, 'a'], sub: { x: undefined, f: function salvar() {} } };
+    obj.self = obj;
+    s.app.ctx.console.log('Salvando:', obj, 7);
+    s.app.ctx.console.log('só texto', 1);
+    s.app.ctx.console.error('falhou', new Error('quota'));
+    const r = await until(async () => {
+      const l = await s.api.logs({ since: 0 });
+      return l.entries.length >= 3 && l;
+    });
+    const [withObj, plain, err] = r.entries;
+    assert.match(withObj.msg, /^Salvando: \{"id":3/);
+    assert.equal(withObj.args[0], 'Salvando:');
+    assert.deepEqual(withObj.args[1], {
+      id: 3, nome: 'Loja', itens: [1, 'a'],
+      sub: { x: { __dvb: 'undefined' }, f: { __dvb: 'ƒ salvar()' } },
+      self: { __dvb: '[circular]' },
+    });
+    assert.equal(withObj.args[2], 7);
+    assert.equal(plain.args, undefined);
+    // Error de outro contexto (aqui, fora do vm do client) continua sendo erro, não objeto vazio.
+    assert.equal(err.args, undefined);
+    assert.match(err.msg, /^falhou Error: quota/);
+  } finally {
+    await teardown(s);
+  }
+});

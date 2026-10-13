@@ -146,8 +146,11 @@
   }
 
   // ---- logs -------------------------------------------------------------
+  // instanceof falha com valores de outro contexto (iframe); o tipo interno não.
+  function isError(v) { return v instanceof Error || Object.prototype.toString.call(v) === '[object Error]'; }
+
   function serialize(value, seen) {
-    if (value instanceof Error) return value.stack || (value.name + ': ' + value.message);
+    if (isError(value)) return value.stack || (value.name + ': ' + value.message);
     if (value === undefined) return 'undefined';
     if (typeof value === 'string') return value;
     if (typeof value === 'function') return '[function ' + (value.name || 'anon') + ']';
@@ -166,12 +169,65 @@
     }
   }
 
+  // Cópia JSON dos objetos logados para o console web montar a árvore expansível.
+  // Valores que o JSON não representa viram { __dvb: texto }; o limite evita
+  // mandar um objeto gigante (ou um nó do DOM) inteiro a cada log.
+  var CLONE_LIMIT = 3000;
+  var CLONE_DEPTH = 12;
+
+  function cloneArg(value, seen, budget, depth) {
+    if (value === null) return null;
+    var t = typeof value;
+    if (t === 'string' || t === 'boolean') return value;
+    if (t === 'number') return isFinite(value) ? value : { __dvb: String(value) };
+    if (t === 'undefined') return { __dvb: 'undefined' };
+    if (t === 'function') return { __dvb: 'ƒ ' + (value.name || 'anônima') + '()' };
+    if (t !== 'object') return { __dvb: String(value) };
+    if (isError(value)) return { __dvb: value.stack || (value.name + ': ' + value.message) };
+    if (Object.prototype.toString.call(value) === '[object Date]') return { __dvb: isNaN(value) ? 'Invalid Date' : value.toISOString() };
+    if (value.nodeType) return { __dvb: '<' + String(value.nodeName || 'node').toLowerCase() + '>' };
+    if (seen.indexOf(value) >= 0) return { __dvb: '[circular]' };
+    if (++budget.n > CLONE_LIMIT || depth > CLONE_DEPTH) return { __dvb: '…' };
+    seen.push(value);
+    var out;
+    if (Object.prototype.toString.call(value) === '[object Array]') {
+      out = [];
+      for (var i = 0; i < value.length; i++) out.push(cloneArg(value[i], seen, budget, depth + 1));
+    } else {
+      out = {};
+      var keys = Object.keys(value);
+      for (var k = 0; k < keys.length; k++) {
+        var v;
+        try { v = value[keys[k]]; } catch (e) { v = { __dvb: '[erro ao ler]' }; }
+        out[keys[k]] = cloneArg(v, seen, budget, depth + 1);
+      }
+    }
+    seen.pop();
+    return out;
+  }
+
+  function structuredArgs(args) {
+    var any = false;
+    var out = [];
+    var budget = { n: 0 };
+    for (var i = 0; i < args.length; i++) {
+      var a = args[i];
+      if (a && typeof a === 'object' && !isError(a)) any = true;
+      out.push(typeof a === 'string' ? a : cloneArg(a, [], budget, 0));
+    }
+    return any ? out : null;
+  }
+
   function pushLog(level, args) {
     var parts = [];
     for (var i = 0; i < args.length; i++) parts.push(serialize(args[i]));
     var msg = parts.join(' ');
     if (msg.length > 4000) msg = msg.slice(0, 4000) + '… [+' + (msg.length - 4000) + ' chars]';
-    logQueue.push({ level: level, msg: msg, ts: Date.now(), href: location.hash || location.pathname });
+    var entry = { level: level, msg: msg, ts: Date.now(), href: location.hash || location.pathname };
+    var structured = null;
+    try { structured = structuredArgs(args); } catch (e) { structured = null; }
+    if (structured) entry.args = structured;
+    logQueue.push(entry);
     if (logQueue.length > 500) logQueue.splice(0, logQueue.length - 500);
     if (!logTimer) logTimer = setTimeout(flushLogs, 250);
   }

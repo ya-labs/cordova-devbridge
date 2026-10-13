@@ -40,6 +40,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
 - **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
 - **`reloadRestore`:** a volta à tela depois do reload é do app, não do devbridge, porque login e banco são específicos de cada app. O client guarda `{hash, app: hook.save()}` no `sessionStorage` (`devbridge.reload`, lido e apagado no boot seguinte, uma tentativa só) e chama `hook.restore(saved, done)` no `deviceready`. A camada "Recarregando…" vale para todo reload; sem hook, ela some no `deviceready`. O servidor injeta `/__devbridge/restore.js` depois do client e força o reload pela rota inicial.
+- **Logs com objetos:** cada entrada mantém `msg` (texto, usado pela CLI e pelo MCP) e, se algum argumento for objeto, `args` com uma cópia JSON para a árvore expansível do console web. Valores que o JSON não representa viram `{ __dvb: texto }` (undefined, função, circular, Error, Date, nó do DOM); a cópia para em 3000 nós ou 12 níveis. Erro é detectado pelo tipo interno, não por `instanceof`, que falha entre contextos.
 - **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
 - **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
 - **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
@@ -63,7 +64,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 29/29.
+- `npm test`: 30/30.
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.

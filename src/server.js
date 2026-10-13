@@ -133,7 +133,10 @@ class DevServer {
 
   addLogs(clientId, entries) {
     for (const e of entries || []) {
-      this.logs.push({ seq: ++this.logSeq, client: clientId, level: e.level, msg: e.msg, ts: e.ts, href: e.href });
+      const entry = { seq: ++this.logSeq, client: clientId, level: e.level, msg: e.msg, ts: e.ts, href: e.href };
+      // args: os objetos logados, para a árvore do console web; CLI e MCP usam só msg.
+      if (Array.isArray(e.args)) entry.args = e.args;
+      this.logs.push(entry);
     }
     if (this.logs.length > MAX_LOGS) this.logs.splice(0, this.logs.length - MAX_LOGS);
   }
