@@ -18,11 +18,11 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 | `src/static.js` | resolve arquivos (platform_www sobre www) e injeta o client |
 | `src/client/devbridge-client.js` | roda **dentro do app**: logs, reload, troca de CSS, executa SQL |
 | `src/sqlguard.js` | classifica o SQL como leitura ou escrita e exige uma instrução por chamada |
-| `src/devbuild.js` | prepare → patch do `config.xml` gerado → compile → `adb install` |
+| `src/devbuild.js` | prepare → patch do `config.xml` gerado → compile → `adb install` → `launchIfServerUp` (só reabre o app se o servidor responder) |
 | `src/adb.js` | reverse, `run-as`, screencap, install |
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
 | `src/ui/index.html` | console web autocontido (sem CDN) |
-| `test/` | `units`, `e2e` (o client real em `node:vm`) e `mcp` (processo real por stdio) |
+| `test/` | `units`, `e2e` (o client real em `node:vm`), `mcp` (processo real por stdio) e `devbuild` (decisão de abrir o app) |
 
 ## Decisões (não reverter sem motivo)
 
@@ -51,23 +51,55 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 - **`pkill -f <padrão>`** com um padrão que aparece na linha do próprio shell mata o comando (exit 144). Mate pelo PID.
 - **`$!` de `cd dir && node ... &`** é o PID do subshell, e matar esse PID pode deixar o node vivo. Rode o node direto em background.
 - **Chrome headless via CDP:** no Node 20 é preciso `node --experimental-websocket`.
+- **APK dev aberto sem servidor:** o WebView mostra uma página de erro de conexão que não tenta de novo. A ordem certa é `start` → `build`. Se o app ficar preso nessa tela, rode `devbridge launch` com o servidor no ar. Corrigido na issue #1.
+- **Hook YABook:** a `main` é protegida, então edições vão por branch de issue. O hook também barra `git merge`, inclusive `--ff-only`, sem pedido explícito; para avançar uma branch local atrás da remota, use `git pull --ff-only`.
 
 ## Estado (2026-10-13)
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 20/20.
-- Contra o Promotor-de-Vendas real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
+- `npm test`: 24/24 (com a issue #1).
+- Contra um app real (Promotor-de-Vendas): os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
 
 **Pendente (não declarar como validado):**
 - `devbridge build` instalando num celular real.
-- Fluxo completo do Promotor no modo dev: login, sincronização, visita com foto, checklist com galeria.
+- Fluxo completo de um app no modo dev: login, sincronização, câmera e galeria.
 - SQL contra `db`/`dbpar` reais no aparelho e `pull-db` (o `run-as` exige build debuggable).
+- `devbridge launch` com o servidor no ar, no aparelho.
 - MCP registrado num Claude Code de verdade.
 - Pack-Tracking: falta criar o `devbridge.config.json` e testar. A config de exemplo está no README.
-- Repo sem commit inicial e sem remoto.
+
+## Situação atual
+
+Confira com `git log` e `gh issue list` antes de confiar nesta seção.
+
+- O remoto é `ya-labs/cordova-devbridge`, um repo **público**. Não registre aqui nem em issues e PRs: branches, commits ou PRs dos apps que usam a ferramenta; serial de aparelho; dados de banco; nome de cliente. Esse contexto vem da pessoa, na conversa.
+- Issue #1 ("Build abre o app antes do servidor de desenvolvimento estar no ar"), branch `1-build-aguarda-servidor`. A entrega dela:
+  - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
+  - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);
+  - o README com a ordem `start` → `build`.
+- A config de cada app (`devbridge.config.json`) mora no repositório do próprio app, não aqui.
+- No modo dev, a origem passa a ser `http://localhost:8100`, então o `localStorage` fica separado do build normal. SQLite, NativeStorage e arquivos continuam os mesmos. Confira o que o app guarda no `localStorage` antes de afirmar que é preciso logar de novo.
+- `INSTALL_FAILED_UPDATE_INCOMPATIBLE` no `build` significa que o app instalado tem outra assinatura (por exemplo, um build release). A saída é desinstalar, o que apaga o banco local do app; sincronizar antes.
+
+**Roteiro de validação no aparelho**
+1. Terminal 1, na raiz do app: `devbridge start`.
+2. Terminal 2: `devbridge build`.
+3. Testar:
+   - live reload (js e css);
+   - `logs -f`;
+   - `sql` antes e depois do login;
+   - `tables`;
+   - fluxos com plugins nativos (câmera, galeria);
+   - `pull-db`;
+   - console web;
+   - `screenshot`;
+   - `launch`;
+   - MCP.
+
+Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste em branch de issue e atualize esta seção.
 
 **Ideias registradas, fora do escopo atual:** suporte a iOS, Wi-Fi como alternativa ao `adb reverse`, e batch de várias instruções SQL.
 

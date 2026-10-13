@@ -67,4 +67,10 @@ function launch(pkg) {
   return run(['shell', 'monkey', '-p', pkg, '-c', 'android.intent.category.LAUNCHER', '1']);
 }
 
-module.exports = { run, devices, reverse, hasReverse, listDatabases, readAppFile, screencap, install, launch };
+// Fecha e reabre: tira o app da página de erro de conexão do WebView.
+async function restart(pkg) {
+  await run(['shell', 'am', 'force-stop', pkg]);
+  return launch(pkg);
+}
+
+module.exports = { run, devices, reverse, hasReverse, listDatabases, readAppFile, screencap, install, launch, restart };
