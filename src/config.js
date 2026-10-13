@@ -11,6 +11,8 @@ const DEFAULTS = {
   platformWww: 'platforms/android/platform_www',
   cordova: 'cordova',
   allowWrites: false,
+  reloadKeepRoute: true,
+  reloadRestore: null,
   databases: {},
   defaultDb: null,
 };
@@ -64,6 +66,7 @@ function loadConfig(options = {}) {
   config.wwwDir = path.resolve(root, config.www);
   config.platformWwwDir = path.resolve(root, config.platformWww);
   config.stateDir = path.join(root, '.devbridge');
+  config.reloadRestoreFile = config.reloadRestore ? path.resolve(root, config.reloadRestore) : null;
   config.url = `http://localhost:${config.port}`;
   return config;
 }

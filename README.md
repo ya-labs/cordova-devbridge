@@ -9,6 +9,9 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android:
 
 Não tem dependências: é Node 20+ puro, mais o `adb`.
 
+
+Para instalar numa máquina nova e configurar um app do zero (pré-requisitos, descobrir os bancos, `reloadRestore`, MCP e solução de problemas), siga o **[manual](docs/MANUAL.md)**.
+
 ## Como funciona
 
 ```
@@ -22,7 +25,7 @@ WebView ── http://localhost:8100 ─ adb reverse ─► devbridge start
 - **`devbuild`:** troca o `<content src>` **só no config.xml gerado** (`platforms/android/.../res/xml/config.xml`), passando a apontar para `http://localhost:8100/index.html`, e compila em debug. O `config.xml` versionado não muda. O próximo `cordova build` ou `cordova run` normal desfaz a troca.
 - **Fusão de pastas:** os arquivos vêm de `platform_www` (`cordova.js` e o JS dos plugins) com fallback para `www`. A fusão é por arquivo, então pastas com o mesmo nome nas duas árvores convivem.
 - **Injeção do client:** acontece só no `www/index.html`. Os templates `.html` do AngularJS chegam intactos.
-- **Banco:** o client usa a conexão que o próprio app já abriu (a variável global `db` / `dbpar`). Se ela ainda não estiver aberta, por exemplo antes do login, abre o arquivo pelo nome. Quando o nome tem `*`, resolve o arquivo via `adb run-as`.
+- **Banco:** o client usa a conexão que o próprio app já abriu (uma variável global como `db`). Se ela ainda não estiver aberta, por exemplo antes do login, abre o arquivo pelo nome. Quando o nome tem `*`, resolve o arquivo via `adb run-as`.
 
 ## Instalação
 
@@ -40,29 +43,21 @@ Requisitos no app:
 
 Crie `devbridge.config.json` na raiz do app (`devbridge init` gera um esqueleto) e acrescente `.devbridge/` ao `.gitignore`.
 
-Promotor-de-Vendas:
+Exemplo com dois bancos: um por usuário (o nome tem `*`) e um de configuração:
 ```json
 {
-  "package": "com.agrosys.apppromvendas",
+  "package": "com.exemplo.meuapp",
   "port": 8100,
   "allowWrites": true,
   "defaultDb": "user",
   "databases": {
-    "user": { "global": "db", "name": "PromotorVendas_*.db" },
-    "par": { "global": "dbpar", "name": "PromotorVendasParam.db" }
+    "user": { "global": "db", "name": "MeuApp_*.db" },
+    "config": { "global": "dbconfig", "name": "MeuAppConfig.db" }
   }
 }
 ```
 
-Pack-Tracking:
-```json
-{
-  "package": "com.agrosys.appcargasprodutos",
-  "port": 8100,
-  "allowWrites": true,
-  "databases": { "main": { "global": "db", "name": "Agrosys_PackTracking.db" } }
-}
-```
+Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 
 | Campo | Significado |
 |---|---|
@@ -72,6 +67,8 @@ Pack-Tracking:
 | `databases.<alias>.name` | arquivo usado em `sqlitePlugin.openDatabase`; aceita `*` |
 | `defaultDb` | alias usado quando `--db` não é informado |
 | `allowWrites` | libera `--write`, o `db_exec` do MCP e a edição da grade (padrão `false`) |
+| `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
+| `reloadRestore` | script do app (fora do `www/`) que guarda o estado antes do reload e volta para a tela depois do boot; implica reload pela rota inicial |
 | `www`, `platformWww`, `cordova` | caminhos e comando, caso fujam do padrão |
 
 ## Uso diário
@@ -90,19 +87,48 @@ O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev
 
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
 
+Se o boot do app depende da rota inicial (por exemplo, um `otherwise('/inicio')` que espera o `deviceready` e abre o SQLite antes de liberar as outras telas), o reload na mesma tela roda o controller antes da hora: aparecem `{{expressões}}` cruas e `executeSql` de `null` nos logs. Nesse caso, use `"reloadKeepRoute": false`. Para sair da tela quebrada sem reinstalar nada, rode `devbridge launch`.
+
+Para voltar à mesma tela mesmo assim (por exemplo, com o usuário logado), use `"reloadRestore": "devbridge.restore.js"`. O script fica na raiz do app, fora do `www/` e portanto fora do build, e o servidor o injeta logo depois do client:
+
+```js
+__devbridge.restore({
+  // antes do reload: o que precisa sobreviver (vai para o sessionStorage)
+  save: function () { return { usuario: Sessao.usuario() }; },
+  // depois do deviceready: refaz o login, abre o banco e volta para saved.hash
+  restore: function (saved, done) {
+    __devbridge.waitFor(function () { return appPronto(); }, function (err) {
+      if (err || !saved.app) return done(err);
+      Sessao.entrar(saved.app.usuario, function () { location.hash = saved.hash; done(); });
+    });
+  }
+});
+```
+
+Em todo reload aparece uma camada "Recarregando…" no app, que some quando o `done()` é chamado. Se o `done()` não vier em 30 s, ou vier com erro, a camada some do mesmo jeito e o motivo vai para os logs.
+
 ```bash
 devbridge status                                   # app conectado, tela, conexões abertas
 devbridge logs -f --level warn,error               # console do app ao vivo
-devbridge sql "select * from CLIFOR limit 5"       # leitura (banco padrão)
-devbridge sql "select * from parametros" --db par
-devbridge sql "update CLIFOR set NOME = ? where rowid = ?" --params '["Teste",3]' --write
+devbridge sql "select * from clientes limit 5"     # leitura (banco padrão)
+devbridge sql "select * from parametros" --db config
+devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
 devbridge tables
-devbridge schema PROVISITA
+devbridge schema pedidos
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
 devbridge screenshot
 ```
 
-**Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, um duplo clique na célula edita o valor: Enter grava, Esc cancela, e `NULL` grava nulo. Ctrl+Enter executa o SQL.
+**Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, a grade da tabela aberta permite:
+- **editar:** duplo clique na célula; Enter grava, Esc cancela, e `NULL` grava nulo;
+- **incluir:** "+ Registro" abre uma linha nova no topo; campo vazio usa o valor padrão da coluna (e o autoincremento), e `NULL` grava nulo; Enter ou ✓ salva;
+- **excluir:** o ✕ da linha apaga pelo `rowid`, depois de confirmar.
+
+Ctrl+Enter executa o SQL.
+
+**Tela ao vivo:** o botão "Tela" do console abre `http://localhost:8100/__devbridge/mirror` numa janela separada, espelhando o celular (cerca de 4 a 5 quadros por segundo, por `adb screencap`). Espaço pausa; o botão de download salva o quadro atual em PNG. A captura só roda enquanto a janela está aberta e visível.
+
+No PC, a raiz `http://localhost:8100/` redireciona para o console. O app em si trava no Chrome do PC, porque o `cordova.js` usa `prompt()` como ponte nativa, e essa aba travada derruba junto as outras abas do mesmo site. Para abrir o app mesmo assim, use `/?app`. Mesmo com essa aba aberta, SQL e status continuam indo para o celular, porque o servidor prefere o client que disparou `deviceready`.
 
 **Segurança:**
 - Leitura é o padrão. A escrita exige `allowWrites` **e** um pedido explícito (`--write`, `db_exec` ou o checkbox).

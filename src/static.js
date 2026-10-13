@@ -64,17 +64,20 @@ function resolveFile(roots, urlPath) {
 }
 
 const CLIENT_TAG = '<script src="/__devbridge/client.js"></script>';
+const RESTORE_TAG = '<script src="/__devbridge/restore.js"></script>';
 
 // O client entra como primeiro script do <head> para capturar logs do boot
 // e continuar recebendo "reload" mesmo se algum script do app quebrar.
-function injectClient(html) {
+// O script de restauração do app (reloadRestore) vem logo depois dele.
+function injectClient(html, { restore = false } = {}) {
   if (html.includes(CLIENT_TAG)) return html;
+  const tags = CLIENT_TAG + (restore ? '\n    ' + RESTORE_TAG : '');
   const head = html.match(/<head[^>]*>/i);
   if (head) {
     const at = head.index + head[0].length;
-    return html.slice(0, at) + '\n    ' + CLIENT_TAG + html.slice(at);
+    return html.slice(0, at) + '\n    ' + tags + html.slice(at);
   }
-  return CLIENT_TAG + '\n' + html;
+  return tags + '\n' + html;
 }
 
-module.exports = { resolveFile, injectClient, mimeOf, CLIENT_TAG };
+module.exports = { resolveFile, injectClient, mimeOf, CLIENT_TAG, RESTORE_TAG };

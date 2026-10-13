@@ -1,0 +1,188 @@
+<!doctype html>
+<html lang="pt-BR">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tela do celular · Devbridge</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b6ef5'/%3E%3Crect x='10' y='5' width='12' height='22' rx='2.5' stroke='white' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+<style>
+  :root {
+    --bg: #0b0d12; --bar: #12151c; --line: #232833; --text: #e5e8ee; --muted: #8b94a4; --faint: #5d6575;
+    --accent: #6b92ff; --ok: #4ccb84; --warn: #e9b44c; --danger: #f27052;
+    --sans: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    color-scheme: dark;
+  }
+  * { box-sizing: border-box; }
+  html, body { height: 100%; margin: 0; }
+  body { background: radial-gradient(ellipse at top, #161b26 0%, var(--bg) 60%); color: var(--text); font: 13px/1.4 var(--sans); display: grid; grid-template-rows: auto 1fr; overflow: hidden; -webkit-font-smoothing: antialiased; }
+  svg { width: 16px; height: 16px; flex: none; }
+
+  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bar); border-bottom: 1px solid var(--line); }
+  .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; min-width: 0; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; position: relative; }
+  .live.on .dot { background: var(--ok); }
+  .live.on .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--ok); opacity: 0; animation: ping 2s ease-out infinite; }
+  .live.paused .dot { background: var(--warn); }
+  .live.err .dot { background: var(--danger); }
+  @keyframes ping { 0% { transform: scale(.6); opacity: .7; } 80%, 100% { transform: scale(1.5); opacity: 0; } }
+  .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .route { color: var(--muted); font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
+  .btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
+  .btn:hover { background: #1d222d; color: var(--text); border-color: var(--line); }
+  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  main { display: grid; place-items: center; padding: 14px; min-height: 0; position: relative; }
+  .phone { position: relative; padding: 8px; border-radius: 26px; background: #050608; box-shadow: 0 20px 60px rgba(0, 0, 0, .6), inset 0 0 0 1px #2a2f3a; max-height: 100%; display: flex; }
+  #screen { display: block; max-height: calc(100vh - 46px - 28px - 16px); max-width: calc(100vw - 28px - 16px); border-radius: 19px; background: #000; min-width: 120px; min-height: 240px; object-fit: contain; }
+  .phone.stale #screen { filter: grayscale(.6) brightness(.6); transition: filter .4s; }
+
+  .overlay { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; }
+  .overlay.show { display: grid; }
+  .overlay > div { max-width: 280px; background: rgba(18, 21, 28, .92); border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
+  .overlay strong { display: block; font-size: 14px; margin-bottom: 4px; }
+  .overlay p { margin: 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
+  .spinner { width: 22px; height: 22px; margin: 0 auto 10px; border: 3px solid rgba(255, 255, 255, .15); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); background: #1d2330; border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<header>
+  <span class="live" id="live"><span class="dot"></span><span id="liveText">conectando…</span></span>
+  <span class="meta" id="fps"></span>
+  <span class="route" id="route" title="Tela atual do app"></span>
+  <button class="btn" id="pause" title="Pausar (espaço)"></button>
+  <button class="btn" id="save" title="Salvar quadro como PNG">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg>
+  </button>
+</header>
+<main>
+  <div class="phone" id="phone"><img id="screen" alt="Tela do celular ao vivo"></div>
+  <div class="overlay show" id="overlay"><div><div class="spinner" id="spin"></div><strong id="ovTitle">Conectando ao celular…</strong><p id="ovText">A primeira captura leva cerca de 1 s.</p></div></div>
+  <div class="toast" id="toast"></div>
+</main>
+<script>
+(function () {
+  'use strict';
+  var $ = function (id) { return document.getElementById(id); };
+  var ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
+  var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
+  var seq = 0;
+  var paused = false;
+  var running = false;
+  var lastBlob = null;
+  var times = [];
+
+  function setLive(kind, text) {
+    $('live').className = 'live ' + kind;
+    $('liveText').textContent = text;
+  }
+
+  function overlay(show, title, text, spin) {
+    $('overlay').classList.toggle('show', show);
+    $('phone').classList.toggle('stale', show && !!lastBlob);
+    if (!show) return;
+    $('ovTitle').textContent = title;
+    $('ovText').textContent = text || '';
+    $('spin').style.display = spin ? '' : 'none';
+  }
+
+  function toast(text) {
+    $('toast').textContent = text;
+    $('toast').classList.add('show');
+    clearTimeout(toast.t);
+    toast.t = setTimeout(function () { $('toast').classList.remove('show'); }, 1600);
+  }
+
+  function showFrame(blob, frameSeq) {
+    var url = URL.createObjectURL(blob);
+    var img = $('screen');
+    var old = img.src;
+    img.onload = function () { if (old) URL.revokeObjectURL(old); };
+    img.src = url;
+    lastBlob = blob;
+    seq = frameSeq;
+    var now = performance.now();
+    times.push(now);
+    while (times.length && now - times[0] > 3000) times.shift();
+    var fps = times.length > 1 ? (times.length - 1) / ((now - times[0]) / 1000) : 0;
+    $('fps').textContent = fps ? fps.toFixed(1) + ' qps' : '';
+    setLive('on', 'Ao vivo');
+    overlay(false);
+  }
+
+  // Long-poll: cada pedido volta com um quadro novo; enquanto houver pedidos, o servidor captura.
+  function loop() {
+    if (running) return;
+    running = true;
+    (function tick() {
+      if (paused || document.hidden) { running = false; return; }
+      fetch('/__devbridge/api/mirror/frame?after=' + seq, { headers: { 'X-Devbridge': '1' }, cache: 'no-store' })
+        .then(function (res) {
+          if (res.status === 204) return null;
+          if (res.ok) {
+            var s = Number(res.headers.get('X-Frame-Seq'));
+            // Pedido que já estava a caminho quando pausou: descarta o quadro.
+            return res.blob().then(function (b) { if (!paused) showFrame(b, s); });
+          }
+          return res.json().then(function (d) { throw new Error(d.error || ('HTTP ' + res.status)); });
+        })
+        .then(function () { setTimeout(tick, 0); })
+        .catch(function (e) {
+          var offline = /Failed to fetch|NetworkError/i.test(e.message);
+          setLive('err', offline ? 'Servidor fora do ar' : 'Sem imagem');
+          $('fps').textContent = '';
+          overlay(true, offline ? 'Servidor fora do ar' : 'Não consegui capturar a tela',
+            offline ? 'Rode "dvb start" na raiz do app.' : e.message + ' — confira o cabo e se o celular está desbloqueado.', false);
+          setTimeout(tick, 1500);
+        });
+    })();
+  }
+
+  function setPaused(p) {
+    paused = p;
+    $('pause').innerHTML = p ? ICON_PLAY : ICON_PAUSE;
+    $('pause').title = p ? 'Retomar (espaço)' : 'Pausar (espaço)';
+    if (p) {
+      setLive('paused', 'Pausado');
+      $('fps').textContent = '';
+      times = [];
+    } else {
+      setLive('', seq ? 'retomando…' : 'conectando…');
+      loop();
+    }
+  }
+
+  // Rota atual do app, a cada 2 s (a mesma do console).
+  function pollRoute() {
+    fetch('/__devbridge/api/status', { headers: { 'X-Devbridge': '1' } }).then(function (r) { return r.json(); }).then(function (s) {
+      var href = s.app && !s.app.error ? (s.app.href || '').replace(/^https?:\/\/[^/]+/, '') : '';
+      $('route').textContent = href;
+      document.title = (href ? href.replace(/^.*#!?\/?/, '') + ' · ' : '') + 'Tela do celular';
+    }).catch(function () { $('route').textContent = ''; });
+  }
+
+  $('pause').onclick = function () { setPaused(!paused); };
+  $('save').onclick = function () {
+    if (!lastBlob) return toast('Ainda não há quadro');
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(lastBlob);
+    a.download = 'tela-' + new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19) + '.png';
+    a.click();
+    setTimeout(function () { URL.revokeObjectURL(a.href); }, 1000);
+    toast('Quadro salvo');
+  };
+  document.addEventListener('keydown', function (ev) {
+    if (ev.key === ' ') { ev.preventDefault(); setPaused(!paused); }
+  });
+  // Janela minimizada ou em outra aba: para de capturar e poupa a CPU do celular.
+  document.addEventListener('visibilitychange', function () { if (!document.hidden && !paused) loop(); });
+
+  setPaused(false);
+  pollRoute();
+  setInterval(pollRoute, 2000);
+})();
+</script>
+</body>
+</html>

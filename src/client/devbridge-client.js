@@ -6,13 +6,133 @@
   var base = '/__devbridge';
   var clientId = Math.random().toString(36).slice(2, 10);
   var serverBoot = null;
+  var keepRoute = true;
   var deviceReady = false;
   var openedDbs = {};
   var logQueue = [];
   var logTimer = null;
   var original = {};
 
-  document.addEventListener('deviceready', function () { deviceReady = true; }, false);
+  // Avisa o servidor: só o WebView do app dispara deviceready, uma aba do PC não.
+  document.addEventListener('deviceready', function () {
+    deviceReady = true;
+    post('/state', { client: clientId, href: location.href, ready: true });
+    startRestore();
+  }, false);
+
+  // ---- reload com volta à tela --------------------------------------------
+  // Antes do reload, a rota e o que o app quiser guardar (save do hook de
+  // __devbridge.restore) vão para o sessionStorage. Depois do deviceready, o
+  // hook do app refaz o que precisar (login, banco) e volta para a tela.
+  // Enquanto isso, uma camada avisa que o app está recarregando.
+  var RELOAD_KEY = 'devbridge.reload';
+  var RESTORE_TIMEOUT = 30000;
+  var restoreHook = null;
+  var restoreTimer = null;
+  var pending = readPending();
+  var overlay = null;
+  var overlayLabel = null;
+  var overlayText = null;
+
+  function readPending() {
+    try {
+      var raw = window.sessionStorage && sessionStorage.getItem(RELOAD_KEY);
+      if (!raw) return null;
+      // Uma tentativa só: se o boot quebrar, o próximo reload não repete a restauração.
+      sessionStorage.removeItem(RELOAD_KEY);
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function savePending() {
+    var saved = { hash: location.hash || '', at: Date.now() };
+    if (restoreHook && typeof restoreHook.save === 'function') {
+      try {
+        saved.app = restoreHook.save();
+      } catch (e) {
+        pushLog('warn', ['[devbridge] save do reloadRestore falhou:', e]);
+      }
+    }
+    try {
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify(saved));
+    } catch (e) {
+      // sem sessionStorage o reload só não volta para a tela
+    }
+  }
+
+  function renderOverlay() {
+    if (overlayText === null) {
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      overlay = null;
+      return;
+    }
+    if (!document.body) return;
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = '__devbridge_overlay';
+      overlay.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;' +
+        'display:flex;align-items:center;justify-content:center;background:rgba(10,14,20,.55);' +
+        'font:600 15px/1.4 system-ui,sans-serif;color:#fff');
+      overlay.innerHTML = '<style>@keyframes __devbridge_spin{to{transform:rotate(360deg)}}</style>' +
+        '<div style="display:flex;align-items:center;padding:12px 18px;border-radius:999px;background:#1d2430;box-shadow:0 4px 18px rgba(0,0,0,.35)">' +
+        '<span style="width:16px;height:16px;margin-right:10px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:__devbridge_spin .8s linear infinite"></span>' +
+        '<span></span></div>';
+      overlayLabel = overlay.getElementsByTagName('span')[1];
+      document.body.appendChild(overlay);
+    }
+    overlayLabel.textContent = overlayText;
+  }
+
+  function showOverlay(text) {
+    overlayText = text;
+    renderOverlay();
+  }
+
+  function hideOverlay() {
+    overlayText = null;
+    renderOverlay();
+  }
+
+  document.addEventListener('DOMContentLoaded', renderOverlay, false);
+
+  function finishRestore(err) {
+    if (!pending) return;
+    pending = null;
+    clearTimeout(restoreTimer);
+    hideOverlay();
+    if (err) pushLog('warn', ['[devbridge] o reload não voltou para a tela: ' + err]);
+  }
+
+  function startRestore() {
+    if (!pending) return;
+    if (!restoreHook || typeof restoreHook.restore !== 'function') return finishRestore();
+    restoreTimer = setTimeout(function () {
+      finishRestore('tempo esgotado (' + RESTORE_TIMEOUT / 1000 + ' s)');
+    }, RESTORE_TIMEOUT);
+    try {
+      restoreHook.restore(pending, function (err) { finishRestore(err); });
+    } catch (e) {
+      finishRestore(e.message || String(e));
+    }
+  }
+
+  // Espera cond() ficar verdadeira; para hooks de restauração que dependem do boot do app.
+  function waitFor(cond, cb, timeout) {
+    var limit = timeout || 20000;
+    var waited = 0;
+    (function tick() {
+      var ok = false;
+      try { ok = cond(); } catch (e) { ok = false; }
+      if (ok) return cb(null);
+      waited += 100;
+      if (waited >= limit) return cb('esperou ' + limit / 1000 + ' s pelo app');
+      setTimeout(tick, 100);
+    })();
+  }
+
+  if (pending) showOverlay('Recarregando' + (pending.hash ? ' · voltando para ' + pending.hash.replace(/^#!?\/?/, '') : '') + '…');
 
   function post(path, body) {
     try {
@@ -26,8 +146,11 @@
   }
 
   // ---- logs -------------------------------------------------------------
+  // instanceof falha com valores de outro contexto (iframe); o tipo interno não.
+  function isError(v) { return v instanceof Error || Object.prototype.toString.call(v) === '[object Error]'; }
+
   function serialize(value, seen) {
-    if (value instanceof Error) return value.stack || (value.name + ': ' + value.message);
+    if (isError(value)) return value.stack || (value.name + ': ' + value.message);
     if (value === undefined) return 'undefined';
     if (typeof value === 'string') return value;
     if (typeof value === 'function') return '[function ' + (value.name || 'anon') + ']';
@@ -46,12 +169,65 @@
     }
   }
 
+  // Cópia JSON dos objetos logados para o console web montar a árvore expansível.
+  // Valores que o JSON não representa viram { __dvb: texto }; o limite evita
+  // mandar um objeto gigante (ou um nó do DOM) inteiro a cada log.
+  var CLONE_LIMIT = 3000;
+  var CLONE_DEPTH = 12;
+
+  function cloneArg(value, seen, budget, depth) {
+    if (value === null) return null;
+    var t = typeof value;
+    if (t === 'string' || t === 'boolean') return value;
+    if (t === 'number') return isFinite(value) ? value : { __dvb: String(value) };
+    if (t === 'undefined') return { __dvb: 'undefined' };
+    if (t === 'function') return { __dvb: 'ƒ ' + (value.name || 'anônima') + '()' };
+    if (t !== 'object') return { __dvb: String(value) };
+    if (isError(value)) return { __dvb: value.stack || (value.name + ': ' + value.message) };
+    if (Object.prototype.toString.call(value) === '[object Date]') return { __dvb: isNaN(value) ? 'Invalid Date' : value.toISOString() };
+    if (value.nodeType) return { __dvb: '<' + String(value.nodeName || 'node').toLowerCase() + '>' };
+    if (seen.indexOf(value) >= 0) return { __dvb: '[circular]' };
+    if (++budget.n > CLONE_LIMIT || depth > CLONE_DEPTH) return { __dvb: '…' };
+    seen.push(value);
+    var out;
+    if (Object.prototype.toString.call(value) === '[object Array]') {
+      out = [];
+      for (var i = 0; i < value.length; i++) out.push(cloneArg(value[i], seen, budget, depth + 1));
+    } else {
+      out = {};
+      var keys = Object.keys(value);
+      for (var k = 0; k < keys.length; k++) {
+        var v;
+        try { v = value[keys[k]]; } catch (e) { v = { __dvb: '[erro ao ler]' }; }
+        out[keys[k]] = cloneArg(v, seen, budget, depth + 1);
+      }
+    }
+    seen.pop();
+    return out;
+  }
+
+  function structuredArgs(args) {
+    var any = false;
+    var out = [];
+    var budget = { n: 0 };
+    for (var i = 0; i < args.length; i++) {
+      var a = args[i];
+      if (a && typeof a === 'object' && !isError(a)) any = true;
+      out.push(typeof a === 'string' ? a : cloneArg(a, [], budget, 0));
+    }
+    return any ? out : null;
+  }
+
   function pushLog(level, args) {
     var parts = [];
     for (var i = 0; i < args.length; i++) parts.push(serialize(args[i]));
     var msg = parts.join(' ');
     if (msg.length > 4000) msg = msg.slice(0, 4000) + '… [+' + (msg.length - 4000) + ' chars]';
-    logQueue.push({ level: level, msg: msg, ts: Date.now(), href: location.hash || location.pathname });
+    var entry = { level: level, msg: msg, ts: Date.now(), href: location.hash || location.pathname };
+    var structured = null;
+    try { structured = structuredArgs(args); } catch (e) { structured = null; }
+    if (structured) entry.args = structured;
+    logQueue.push(entry);
     if (logQueue.length > 500) logQueue.splice(0, logQueue.length - 500);
     if (!logTimer) logTimer = setTimeout(flushLogs, 250);
   }
@@ -180,6 +356,18 @@
     return swapped;
   }
 
+  // Sem keepRoute o reload volta à rota inicial, como uma abertura nova do app:
+  // há apps cujo boot (deviceready, abrir o SQLite) só acontece nela.
+  function reloadApp() {
+    flushLogs();
+    showOverlay('Recarregando…');
+    savePending();
+    if (!keepRoute && location.hash && window.history && history.replaceState) {
+      history.replaceState(null, '', location.pathname + (location.search || ''));
+    }
+    location.reload();
+  }
+
   function connect() {
     var url = base + '/events?client=' + clientId +
       '&href=' + encodeURIComponent(location.href) +
@@ -188,17 +376,15 @@
 
     es.addEventListener('hello', function (ev) {
       var data = JSON.parse(ev.data);
+      keepRoute = data.reloadKeepRoute !== false;
       // Servidor reiniciou enquanto estávamos desconectados: arquivos podem ter mudado.
-      if (serverBoot && serverBoot !== data.boot) return location.reload();
+      if (serverBoot && serverBoot !== data.boot) return reloadApp();
       serverBoot = data.boot;
     });
-    es.addEventListener('reload', function () {
-      flushLogs();
-      location.reload();
-    });
+    es.addEventListener('reload', reloadApp);
     es.addEventListener('css', function (ev) {
       var paths = JSON.parse(ev.data).paths;
-      if (!swapCss(paths)) location.reload();
+      if (!swapCss(paths)) reloadApp();
     });
     es.addEventListener('sql', function (ev) {
       var req = JSON.parse(ev.data);
@@ -223,6 +409,13 @@
     });
   }
 
-  window.__devbridge = { client: clientId, flushLogs: flushLogs };
+  window.__devbridge = {
+    client: clientId,
+    flushLogs: flushLogs,
+    // O script do reloadRestore registra { save: fn() -> dados, restore: fn(salvo, done) }.
+    restore: function (hook) { restoreHook = hook; },
+    waitFor: waitFor,
+    overlayText: function () { return overlayText; },
+  };
   connect();
 })();

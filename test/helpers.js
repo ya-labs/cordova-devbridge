@@ -21,7 +21,7 @@ function makeApp(extraConfig = {}) {
   const config = {
     package: 'com.teste.app',
     port: 0,
-    databases: { par: { global: 'dbpar', name: 'Param.db' }, user: { global: 'db', name: 'User_*.db' } },
+    databases: { par: { global: 'dbconfig', name: 'Param.db' }, user: { global: 'db', name: 'User_*.db' } },
     ...extraConfig,
   };
   fs.writeFileSync(path.join(root, 'devbridge.config.json'), JSON.stringify(config));
@@ -52,6 +52,19 @@ function fakeSqlitePlugin(data) {
     if (m) {
       const row = tables[m[1]][params[1] - 1];
       row[m[2]] = params[0];
+      return { rows: [], rowsAffected: 1 };
+    }
+    m = s.match(/^insert\s+into\s+"?(\w+)"?\s+(?:default\s+values|\(([^)]*)\)\s+values)/i);
+    if (m) {
+      const cols = m[2] ? m[2].split(',').map((c) => c.trim().replace(/"/g, '')) : [];
+      const row = {};
+      cols.forEach((c, i) => (row[c] = params[i]));
+      tables[m[1]].push(row);
+      return { rows: [], rowsAffected: 1 };
+    }
+    m = s.match(/^delete\s+from\s+"?(\w+)"?\s+where\s+rowid\s*=\s*\?/i);
+    if (m) {
+      tables[m[1]].splice(params[0] - 1, 1);
       return { rows: [], rowsAffected: 1 };
     }
     m = s.match(/^delete\s+from\s+(\w+)/i);
@@ -100,8 +113,8 @@ function fakeSqlitePlugin(data) {
 }
 
 // Roda o client real num vm com EventSource/XHR mínimos apontando para o servidor.
-function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
-  const calls = { reload: 0, logs: [] };
+function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
+  const calls = { reload: 0, logs: [], hrefsOnReload: [] };
   const listeners = {};
   const docListeners = {};
   const sources = [];
@@ -162,16 +175,39 @@ function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
       error: (...a) => calls.logs.push(['error', a]),
       debug: () => {},
     },
-    location: { href: baseUrl + '/index.html#/home', hash: '#/home', pathname: '/index.html', origin: baseUrl, reload: () => calls.reload++ },
+    location: {
+      href: baseUrl + '/index.html#/home', hash: '#/home', pathname: '/index.html', search: '', origin: baseUrl,
+      reload() {
+        calls.reload++;
+        calls.hrefsOnReload.push(this.href);
+      },
+    },
+    history: {
+      replaceState(state, title, url) {
+        ctx.location.href = new URL(url, baseUrl).href;
+        ctx.location.hash = new URL(url, baseUrl).hash;
+      },
+    },
     navigator: { userAgent: 'vm-test' },
     document: {
       addEventListener: (t, fn) => (docListeners[t] = fn),
       querySelectorAll: () => links,
-      createElement: () => {
+      createElement: (tag) => {
+        if (tag !== 'a') return { setAttribute() {}, getElementsByTagName: () => [{}, {}] };
         const a = {};
         Object.defineProperty(a, 'href', { set(v) { a.pathname = new URL(v).pathname; } });
         return a;
       },
+      body: {
+        appendChild(n) { n.parentNode = this; },
+        removeChild(n) { n.parentNode = null; },
+      },
+    },
+    // Compartilhado entre clients do mesmo teste para simular o sessionStorage que sobrevive ao reload.
+    sessionStorage: {
+      getItem: (k) => (k in storage ? storage[k] : null),
+      setItem: (k, v) => { storage[k] = String(v); },
+      removeItem: (k) => { delete storage[k]; },
     },
     addEventListener: (t, fn) => (listeners[t] = fn),
     EventSource,

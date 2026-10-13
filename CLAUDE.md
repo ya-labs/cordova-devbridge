@@ -1,6 +1,6 @@
 # cordova-devbridge: guia para agentes
 
-Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-de-Vendas, Pack-Tracking, Sales-Mobile). Usuários: Nícolas e Marco, ambos em Linux, com o celular via USB/adb. O uso está descrito no [README.md](README.md). Este arquivo registra as decisões e o que um agente precisa saber antes de mexer.
+Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em Linux com o celular via USB/adb. Contexto pessoal (apps, pessoas, memória) fica no `CLAUDE.local.md`, fora do git. O uso está descrito no [README.md](README.md). Este arquivo registra as decisões e o que um agente precisa saber antes de mexer.
 
 ## O que o projeto resolve
 
@@ -20,15 +20,18 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 | `src/sqlguard.js` | classifica o SQL como leitura ou escrita e exige uma instrução por chamada |
 | `src/devbuild.js` | prepare → patch do `config.xml` gerado → compile → `adb install` → `launchIfServerUp` (só reabre o app se o servidor responder) |
 | `src/adb.js` | reverse, `run-as`, screencap, install |
+| `src/mirror.js` | espelho da tela: capturas `screencap -p` em paralelo, só enquanto há quem peça quadros |
+| `src/ui/mirror.html` | janela do espelho (long-poll em `/api/mirror/frame`) |
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
 | `src/ui/index.html` | console web autocontido (sem CDN) |
+| `docs/MANUAL.md` | instalação e configuração de um app do zero, na ordem dos passos; solução de problemas. Mantenha em sincronia com o README e o código |
 | `test/` | `units`, `e2e` (o client real em `node:vm`), `mcp` (processo real por stdio) e `devbuild` (decisão de abrir o app) |
 
 ## Decisões (não reverter sem motivo)
 
 - **Zero dependências.** Só Node 20+ e adb. Por isso a comunicação usa SSE + POST, e não WebSocket, e o MCP é escrito à mão.
 - **Patch só no `config.xml` gerado** (`platforms/android/app/src/main/res/xml/config.xml`), nunca no versionado. O cordova-android aceita um `<content src>` com esquema como URL inicial (`ConfigXmlParser.setStartUrl`). O acesso ao bridge segue o `<allow-navigation>` (`CordovaPlugin.shouldAllowBridgeAccess`). O próximo `cordova prepare` desfaz o patch, então nada vaza para o release.
-- **Resolução por arquivo:** primeiro `platform_www`, depois `www`. O Pack-Tracking tem `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
+- **Resolução por arquivo:** primeiro `platform_www`, depois `www`. Há app real com `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
 - **O client é injetado só em `www/index.html`.** Os templates do AngularJS também são `.html` e chegam por XHR. Ele entra como primeiro script do `<head>`, para capturar logs do boot e continuar recebendo reload mesmo se o app quebrar.
 - **O client é ES5** (`var`, `function`), para não depender da versão do WebView.
 - **Segurança do banco:**
@@ -37,7 +40,13 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
   - a leitura roda em `readTransaction`, então o próprio plugin recusa escrita;
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
-- **Bancos:** o client prefere a conexão global que o app já abriu (`db`, `dbpar`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
+- **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
+- **`reloadRestore`:** a volta à tela depois do reload é do app, não do devbridge, porque login e banco são específicos de cada app. O client guarda `{hash, app: hook.save()}` no `sessionStorage` (`devbridge.reload`, lido e apagado no boot seguinte, uma tentativa só) e chama `hook.restore(saved, done)` no `deviceready`. A camada "Recarregando…" vale para todo reload; sem hook, ela some no `deviceready`. O servidor injeta `/__devbridge/restore.js` depois do client e força o reload pela rota inicial.
+- **Logs com objetos:** cada entrada mantém `msg` (texto, usado pela CLI e pelo MCP) e, se algum argumento for objeto, `args` com uma cópia JSON para a árvore expansível do console web. Valores que o JSON não representa viram `{ __dvb: texto }` (undefined, função, circular, Error, Date, nó do DOM); a cópia para em 3000 nós ou 12 níveis. Erro é detectado pelo tipo interno, não por `instanceof`, que falha entre contextos.
+- **Espelho da tela sem dependência:** sem scrcpy/ffmpeg, o espelho é feito com `adb exec-out screencap -p` (~0,6 s por quadro no aparelho). Três capturas em paralelo dão ~4,7 qps (medido; 4 dão ~5,4, mas pesam mais no app em teste). Capturas terminam fora de ordem, então só se publica quadro de captura iniciada depois da que gerou o último (contador, não relógio). A janela pede por long-poll na API (com `X-Devbridge`); sem pedidos por 4 s os workers param, e a janela para de pedir quando fica oculta.
+- **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
+- **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
+- **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
 
 ## Convenções
 
@@ -58,25 +67,46 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 24/24 (com a issue #1).
-- Contra um app real (Promotor-de-Vendas): os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
+- `npm test`: 36/36.
+- Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
+- No aparelho (Android 15), pelo pacote #4:
+  - `build` instalando por cima do APK debug existente, sem desinstalar (24 s);
+  - o app conecta sozinho;
+  - logs do boot;
+  - SQL no banco global aberto e no banco por arquivo;
+  - `pull-db`, `screenshot` e `launch`;
+  - troca de CSS sem reload e reload de JS.
+  - `reloadKeepRoute: false` (#3): o reload volta sem hash e o boot passa pela rota inicial, sem erro.
+  - depois do login: `tables`, `sql` e `schema` pela conexão global e `pull-db` do banco com `*` (copia todos os arquivos que casam);
+  - câmera e foto do checklist com a origem `http://localhost`: fotos gravadas no SQLite, nenhum erro nos logs.
 
 **Pendente (não declarar como validado):**
-- `devbridge build` instalando num celular real.
-- Fluxo completo de um app no modo dev: login, sincronização, câmera e galeria.
-- SQL contra `db`/`dbpar` reais no aparelho e `pull-db` (o `run-as` exige build debuggable).
-- `devbridge launch` com o servidor no ar, no aparelho.
+- Escolha de foto pela galeria (confirmar com a pessoa se foi testada).
+- Console web contra o app no aparelho.
 - MCP registrado num Claude Code de verdade.
-- Pack-Tracking: falta criar o `devbridge.config.json` e testar. A config de exemplo está no README.
+- Um segundo app real, com um banco só.
 
 ## Situação atual
 
 Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 
 - O remoto é `ya-labs/cordova-devbridge`, um repo **público**. Não registre aqui nem em issues e PRs: branches, commits ou PRs dos apps que usam a ferramenta; serial de aparelho; dados de banco; nome de cliente. Esse contexto vem da pessoa, na conversa.
-- Issue #1 ("Build abre o app antes do servidor de desenvolvimento estar no ar"), branch `1-build-aguarda-servidor`. A entrega dela:
+- Issue pacote #4 ("Validação do devbridge em app real no aparelho"), branch `4-validacao-app-real`:
+  - reúne as correções que a validação revelar, cada uma num commit documentado;
+  - o PR sai com merge commit;
+  - entregas:
+    - #3 (`reloadKeepRoute`);
+    - a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo);
+    - o redirecionamento do navegador do PC para o console;
+    - incluir e excluir registros na grade do console (pedido da pessoa durante a validação);
+    - `reloadRestore` e a camada "Recarregando…" (pedido da pessoa: o reload de JS não pode voltar ao login). Validado no aparelho pela pessoa;
+    - `docs/MANUAL.md` com instalação, configuração de app novo, `reloadRestore`, MCP e solução de problemas;
+    - console redesenhado, com objetos expansíveis nos logs;
+    - tela do celular ao vivo numa janela separada (botão "Tela"). Validado no aparelho: 4,7 qps, workers param sem espectador.
+- A UI não tem teste automatizado de clique. A inclusão e a exclusão foram conferidas num Chrome headless via CDP, contra o app falso do `test/helpers.js`. Os testes de API cobrem as instruções que a grade envia.
+- Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
   - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);
   - o README com a ordem `start` → `build`.
@@ -105,6 +135,4 @@ Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste
 
 ## Memória
 
-Projeto registrado na YABook com o escopo `["Agrosys", "cordova-devbridge"]`. Os aprendizados técnicos desta ferramenta vão para esse escopo, sem nome nem código de cliente.
-
-Os registros da sessão de criação ficaram no escopo de Ferramentas: `kn-fer-cordova-live-reload-content-src`, `kn-fer-cordova-js-android-trava-chrome-desktop` e o episódio `ep-fer-20261013-cordova-devbridge`. Complemente esses registros em vez de duplicá-los.
+Os registros de memória (escopo, ids) ficam no `CLAUDE.local.md`. Aprendizados técnicos desta ferramenta não levam nome de app, cliente ou pessoa.

@@ -10,6 +10,7 @@ const { resolveFile, injectClient, mimeOf } = require('./static');
 const { checkSql } = require('./sqlguard');
 const { resolveDatabase } = require('./config');
 const adb = require('./adb');
+const { Mirror } = require('./mirror');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
 const UI_DIR = path.join(__dirname, 'ui');
@@ -20,14 +21,22 @@ function globToRegExp(glob) {
   return new RegExp('^' + glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
 }
 
+// Navegador de PC: Mozilla sem Android. O WebView do app traz "Android" e o fetch do Node não traz "Mozilla".
+function isDesktopBrowser(ua) {
+  return /Mozilla/.test(ua || '') && !/Android/i.test(ua || '');
+}
+
 class DevServer {
-  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases } = {}) {
+  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {} } = {}) {
     this.config = config;
+    this.screencap = screencap;
+    this.mirror = new Mirror({ capture: () => this.screencap(), ...mirror });
     this.logger = logger;
     this.watchEnabled = watch;
     this.listDatabases = listDatabases;
     this.boot = crypto.randomBytes(4).toString('hex');
     this.clients = new Map();
+    this.readyClients = new Set();
     this.pending = new Map();
     this.logs = [];
     this.logSeq = 0;
@@ -51,6 +60,7 @@ class DevServer {
 
   close() {
     if (this.watcher) this.watcher.close();
+    this.mirror.stop();
     for (const c of this.clients.values()) c.res.end();
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
@@ -82,9 +92,21 @@ class DevServer {
   }
 
   // ---- canal com o app --------------------------------------------------
+  // Com reloadRestore o app volta sozinho para a tela; o reload parte sempre da rota inicial.
+  keepRoute() {
+    return this.config.reloadKeepRoute !== false && !this.config.reloadRestoreFile;
+  }
+
+  // Prefere o client que já disparou deviceready: uma aba do PC aberta em
+  // localhost:8100 também carrega o client, mas não é o app.
   activeClient() {
     let latest = null;
-    for (const c of this.clients.values()) if (!latest || c.connectedAt >= latest.connectedAt) latest = c;
+    for (const c of this.clients.values()) {
+      const better = !latest
+        || (this.readyClients.has(c.id) && !this.readyClients.has(latest.id))
+        || (this.readyClients.has(c.id) === this.readyClients.has(latest.id) && c.connectedAt >= latest.connectedAt);
+      if (better) latest = c;
+    }
     return latest;
   }
 
@@ -115,7 +137,10 @@ class DevServer {
 
   addLogs(clientId, entries) {
     for (const e of entries || []) {
-      this.logs.push({ seq: ++this.logSeq, client: clientId, level: e.level, msg: e.msg, ts: e.ts, href: e.href });
+      const entry = { seq: ++this.logSeq, client: clientId, level: e.level, msg: e.msg, ts: e.ts, href: e.href };
+      // args: os objetos logados, para a árvore do console web; CLI e MCP usam só msg.
+      if (Array.isArray(e.args)) entry.args = e.args;
+      this.logs.push(entry);
     }
     if (this.logs.length > MAX_LOGS) this.logs.splice(0, this.logs.length - MAX_LOGS);
   }
@@ -135,6 +160,9 @@ class DevServer {
         port: this.port,
         boot: this.boot,
         allowWrites: !!this.config.allowWrites,
+        reloadKeepRoute: this.keepRoute(),
+        reloadRestore: this.config.reloadRestoreFile,
+        clients: this.clients.size,
         databases: this.config.databases,
         defaultDb: this.config.defaultDb,
         logs: this.logSeq,
@@ -216,8 +244,14 @@ class DevServer {
     const p = url.pathname;
     if (p.startsWith('/__devbridge/api/')) return this.handleApi(req, res, url);
     if (p === '/__devbridge/client.js') return this.sendFile(res, CLIENT_JS);
+    if (p === '/__devbridge/restore.js') {
+      if (!this.config.reloadRestoreFile) return this.fail(res, 404, 'Sem "reloadRestore" na config.');
+      if (!fs.existsSync(this.config.reloadRestoreFile)) return this.fail(res, 404, `reloadRestore não encontrado: ${this.config.reloadRestoreFile}`);
+      return this.sendFile(res, this.config.reloadRestoreFile);
+    }
     if (p === '/__devbridge/events') return this.openEvents(req, res, url);
     if (p === '/__devbridge' || p === '/__devbridge/') return this.sendFile(res, path.join(UI_DIR, 'index.html'));
+    if (p === '/__devbridge/mirror') return this.sendFile(res, path.join(UI_DIR, 'mirror.html'));
     if (req.method === 'POST' && p === '/__devbridge/log') {
       const body = await readJson(req);
       this.addLogs(body.client, body.entries);
@@ -238,9 +272,18 @@ class DevServer {
       const body = await readJson(req);
       const c = this.clients.get(body.client);
       if (c) c.href = body.href;
+      // Guardado por id: o EventSource reconecta com o mesmo id e a marca continua valendo.
+      if (body.ready) this.readyClients.add(body.client);
       return this.json(res, 200, { ok: true });
     }
     if (p.startsWith('/__devbridge/')) return this.fail(res, 404, 'Rota devbridge desconhecida.');
+    // No Chrome do PC o app trava no prompt() do cordova.js e, por dividir o
+    // processo com as outras abas do mesmo site, trava também o console.
+    // Quem quiser o app mesmo assim usa ?app.
+    if ((p === '/' || p === '/index.html') && isDesktopBrowser(req.headers['user-agent']) && !url.searchParams.has('app')) {
+      res.writeHead(302, { Location: '/__devbridge/' });
+      return res.end();
+    }
     return this.serveStatic(req, res, p);
   }
 
@@ -264,8 +307,24 @@ class DevServer {
           return this.json(res, 200, await this.tables(q.get('db')));
         case 'GET /schema':
           return this.json(res, 200, await this.schema(q.get('db'), q.get('table')));
+        case 'GET /mirror/frame': {
+          // Long-poll: responde quando houver quadro mais novo que "after".
+          const frame = await this.mirror.next(Number(q.get('after') || 0));
+          if (!frame) {
+            res.writeHead(204, { 'Cache-Control': 'no-store' });
+            return res.end();
+          }
+          if (frame.error) return this.fail(res, 503, frame.error);
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'no-store',
+            'X-Frame-Seq': String(frame.seq),
+            'X-Frame-Ts': String(frame.ts),
+          });
+          return res.end(frame.png);
+        }
         case 'GET /screenshot': {
-          const png = await adb.screencap();
+          const png = await this.screencap();
           res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
           return res.end(png);
         }
@@ -287,9 +346,12 @@ class DevServer {
     res.write('retry: 1000\n\n');
     const client = { id, res, href: url.searchParams.get('href'), ua: url.searchParams.get('ua'), connectedAt: Date.now() };
     this.clients.set(id, client);
-    this.sendEvent(client, 'hello', { boot: this.boot });
+    this.sendEvent(client, 'hello', { boot: this.boot, reloadKeepRoute: this.keepRoute() });
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     this.logger.log(`[devbridge] app conectado (${id}) ${client.href || ''}`);
+    if (client.ua && !/Android/i.test(client.ua)) {
+      this.logger.log('[devbridge] aviso: essa conexão é de um navegador do PC, não do app. O console fica em /__devbridge/.');
+    }
     req.on('close', () => {
       clearInterval(ping);
       if (this.clients.get(id) === client) this.clients.delete(id);
@@ -302,7 +364,7 @@ class DevServer {
     const file = resolveFile(roots, urlPath);
     if (!file) return this.fail(res, 404, `Não encontrado: ${urlPath}`);
     if (file === path.join(this.config.wwwDir, 'index.html')) {
-      const html = injectClient(await fsp.readFile(file, 'utf8'));
+      const html = injectClient(await fsp.readFile(file, 'utf8'), { restore: !!this.config.reloadRestoreFile });
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       return res.end(req.method === 'HEAD' ? undefined : html);
     }
