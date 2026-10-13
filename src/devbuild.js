@@ -54,8 +54,29 @@ async function devBuild(config, { install = true, prepare = true, log = console.
   log(`[devbridge] adb install -r ${DEBUG_APK}`);
   await adb.install(apk);
   await adb.reverse(config.port).catch((err) => log(`[devbridge] adb reverse falhou: ${err.message}`));
-  await adb.launch(config.package).catch(() => {});
-  return { apk, installed: true };
+  const launched = await launchIfServerUp(config, { log });
+  return { apk, installed: true, launched };
 }
 
-module.exports = { devBuild, patchConfigXml, GENERATED_CONFIG, DEBUG_APK };
+async function serverUp(port, timeoutMs = 1500) {
+  try {
+    const res = await fetch(`http://127.0.0.1:${port}/__devbridge/client.js`, { signal: AbortSignal.timeout(timeoutMs) });
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
+// O APK dev sem servidor abre numa página de erro que não tenta de novo:
+// só abre o app se o `devbridge start` já estiver no ar.
+async function launchIfServerUp(config, { log = console.log, isUp = serverUp, restart = adb.restart } = {}) {
+  if (!(await isUp(config.port))) {
+    log(`[devbridge] servidor não está rodando em ${config.url}; o app não foi aberto.`);
+    log('           Rode "devbridge start" e depois "devbridge launch" (ou abra o app no celular).');
+    return false;
+  }
+  await restart(config.package).catch((err) => log(`[devbridge] não consegui abrir o app: ${err.message}`));
+  return true;
+}
+
+module.exports = { devBuild, patchConfigXml, launchIfServerUp, serverUp, GENERATED_CONFIG, DEBUG_APK };

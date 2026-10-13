@@ -6,7 +6,7 @@ const path = require('node:path');
 
 const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
-const { devBuild } = require('../src/devbuild');
+const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
 const { sqlResult, logLine, table } = require('../src/format');
 const { startMcp } = require('../src/mcp');
@@ -17,9 +17,11 @@ const HELP = `cordova-devbridge — live reload e SQLite do app Cordova no celul
 Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG_NAME})
 
   init                       cria ${CONFIG_NAME} detectando o id do app
+  start [--no-adb]           servidor de live reload + API + console web (rode antes do build)
   build [--no-install] [--skip-prepare]
-                             gera e instala o APK dev (content src → servidor do PC)
-  start [--no-adb]           servidor de live reload + API + console web
+                             gera e instala o APK dev (content src → servidor do PC);
+                             só abre o app se o start estiver no ar
+  launch                     fecha e reabre o app no celular (sai da tela de erro de conexão)
   status                     app conectado, tela atual, conexões abertas
   reload                     recarrega o app
   logs [-f] [--level error,warn] [--since N]
@@ -160,10 +162,17 @@ async function main() {
   const config = loadConfig({ configPath: args.flags.config });
   const api = new Api(config.port);
   switch (cmd) {
-    case 'build':
-      await devBuild(config, { install: !args.flags['no-install'], prepare: !args.flags['skip-prepare'] });
-      console.log('[devbridge] pronto. Rode "devbridge start" e abra o app no celular.');
+    case 'build': {
+      const r = await devBuild(config, { install: !args.flags['no-install'], prepare: !args.flags['skip-prepare'] });
+      if (r.launched) console.log('[devbridge] pronto: app aberto no celular carregando do servidor.');
+      else if (!r.installed) console.log(`[devbridge] APK dev gerado em ${path.relative(process.cwd(), r.apk)} (não instalado).`);
       return;
+    }
+    case 'launch': {
+      const launched = await launchIfServerUp(config);
+      if (launched) console.log('[devbridge] app reaberto.');
+      return;
+    }
     case 'start':
       return cmdStart(config, args.flags);
     case 'status':

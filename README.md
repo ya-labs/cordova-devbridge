@@ -76,10 +76,17 @@ Pack-Tracking:
 
 ## Uso diário
 
+A ordem importa: primeiro o servidor, depois o build.
+
 ```bash
-devbridge build        # 1x, ou quando mudar plugin nativo/config.xml/ícone/permissão
-devbridge start        # deixa rodando; mantém o adb reverse ativo
+# terminal 1: deixa rodando; mantém o adb reverse ativo
+devbridge start
+
+# terminal 2: 1x, ou quando mudar plugin nativo/config.xml/ícone/permissão
+devbridge build
 ```
+
+O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev cai numa página de erro de conexão que não tenta de novo sozinha. Se isso acontecer, com o `start` rodando, use `devbridge launch`, que fecha e reabre o app.
 
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
 
@@ -129,7 +136,7 @@ O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `
 
 - **Mudanças nativas:** plugin, `config.xml`, ícone e permissões exigem `devbridge build` de novo.
 - **Origem diferente:** no modo dev a origem é `http://localhost:8100`, e não `file://`. Por isso `localStorage` e IndexedDB ficam separados do build normal. SQLite, NativeStorage e arquivos não mudam, porque são nativos.
-- **Depende do cabo:** sem o cabo e sem o `devbridge start`, o APK dev não carrega. Para testar desconectado, gere um build normal (`cordova run android`).
+- **Depende do cabo:** sem o cabo e sem o `devbridge start`, o APK dev não carrega (`devbridge launch` reabre o app depois que o servidor voltar). Para testar desconectado, gere um build normal (`cordova run android`).
 - **iOS:** fora do escopo por enquanto.
 
 ## Testes
