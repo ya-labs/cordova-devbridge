@@ -14,10 +14,15 @@ const { RESTORE_TAG } = require('../src/static');
 
 const silent = { log() {} };
 
-async function setup({ allowWrites = false, globals, listDatabases, extraConfig } = {}) {
+async function setup({ allowWrites = false, globals, listDatabases, extraConfig, screencap } = {}) {
   const root = makeApp({ allowWrites, ...extraConfig });
   const config = loadConfig({ cwd: root });
-  const server = new DevServer(config, { logger: silent, listDatabases: listDatabases || (async () => []) });
+  const server = new DevServer(config, {
+    logger: silent,
+    listDatabases: listDatabases || (async () => []),
+    screencap: screencap || (async () => { throw new Error('sem aparelho no teste'); }),
+    mirror: { idleMs: 200, waitMs: 300, retryMs: 50 },
+  });
   await server.listen();
   const base = `http://127.0.0.1:${server.port}`;
   const data = {
@@ -358,6 +363,39 @@ test('logs com objeto levam args estruturados (circular, undefined, função) e 
     // Error de outro contexto (aqui, fora do vm do client) continua sendo erro, não objeto vazio.
     assert.equal(err.args, undefined);
     assert.match(err.msg, /^falhou Error: quota/);
+  } finally {
+    await teardown(s);
+  }
+});
+
+test('espelho: janela servida e quadros pela API (com header, seq crescente)', async () => {
+  let n = 0;
+  const s = await setup({ screencap: async () => { await wait(10); return Buffer.from('png' + ++n); } });
+  try {
+    const page = await fetch(s.base + '/__devbridge/mirror');
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /Tela do celular/);
+    assert.equal((await fetch(s.base + '/__devbridge/api/mirror/frame')).status, 403);
+    const h = { 'X-Devbridge': '1' };
+    const r1 = await fetch(s.base + '/__devbridge/api/mirror/frame?after=0', { headers: h });
+    assert.equal(r1.status, 200);
+    assert.equal(r1.headers.get('content-type'), 'image/png');
+    const seq1 = Number(r1.headers.get('x-frame-seq'));
+    assert.match(Buffer.from(await r1.arrayBuffer()).toString(), /^png\d+$/);
+    const r2 = await fetch(s.base + '/__devbridge/api/mirror/frame?after=' + seq1, { headers: h });
+    assert.ok(Number(r2.headers.get('x-frame-seq')) > seq1);
+    await r2.arrayBuffer();
+  } finally {
+    await teardown(s);
+  }
+});
+
+test('espelho: sem aparelho, a API responde 503 com o motivo', async () => {
+  const s = await setup();
+  try {
+    const r = await fetch(s.base + '/__devbridge/api/mirror/frame?after=0', { headers: { 'X-Devbridge': '1' } });
+    assert.equal(r.status, 503);
+    assert.match((await r.json()).error, /sem aparelho no teste/);
   } finally {
     await teardown(s);
   }

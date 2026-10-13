@@ -281,13 +281,6 @@
   #logs .line.error .msg .jt, #logs .line.error .msg .jt .row { color: var(--text); }
   #logs .placeholder { padding: 10px 14px; color: var(--faint); font: 12.5px var(--sans); }
 
-  /* ---- screenshot ---- */
-  #shot { position: fixed; inset: 0; background: rgba(8, 11, 16, .72); backdrop-filter: blur(4px); display: none; align-items: center; justify-content: center; z-index: 10; cursor: zoom-out; padding: 24px; }
-  #shot .frame { position: relative; padding: 10px; border-radius: 30px; background: #0b0d11; box-shadow: var(--shadow-lg), inset 0 0 0 1px #2a2f38; animation: pop .18s ease-out; }
-  #shot img { display: block; max-height: calc(92vh - 20px); max-width: 88vw; border-radius: 22px; }
-  #shot .close { position: absolute; top: -14px; right: -14px; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--surface); color: var(--text); display: grid; place-items: center; cursor: pointer; box-shadow: var(--shadow-lg); }
-  @keyframes pop { from { transform: scale(.96); opacity: 0; } }
-
   @media (max-width: 900px) {
     header { flex-wrap: wrap; }
     .status { order: 3; max-width: none; flex: 1 1 100%; }
@@ -316,7 +309,7 @@
   <button class="btn" id="reload" title="Recarregar o app no celular">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg><span class="hide-sm">Recarregar</span>
   </button>
-  <button class="btn" id="screenshot" title="Capturar a tela do celular">
+  <button class="btn" id="screenshot" title="Abrir a tela do celular ao vivo numa janela separada">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/></svg><span class="hide-sm">Tela</span>
   </button>
   <button class="icon-btn" id="theme" title="Tema">
@@ -387,12 +380,6 @@
     </section>
   </div>
 </main>
-<div id="shot">
-  <div class="frame">
-    <img alt="Tela do celular">
-    <button class="close" title="Fechar (Esc)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-  </div>
-</div>
 <script>
 (function () {
   'use strict';
@@ -415,8 +402,7 @@
       headers: Object.assign({ 'X-Devbridge': '1' }, body ? { 'Content-Type': 'application/json' } : {}),
       body: body ? JSON.stringify(body) : undefined
     }).then(function (res) {
-      if (route === '/screenshot' && res.ok) return res.blob();
-      return res.json().then(function (data) {
+        return res.json().then(function (data) {
         if (!res.ok) throw new Error(data.error || ('HTTP ' + res.status));
         return data;
       });
@@ -934,9 +920,6 @@
     window.addEventListener('pointerup', up);
   };
 
-  // ---- screenshot ----
-  function closeShot() { $('shot').style.display = 'none'; }
-
   // ---- eventos ----
   $('run').onclick = function () { run(false); };
   $('addRow').onclick = addRow;
@@ -959,21 +942,15 @@
   $('reload').onclick = function () {
     api('POST', '/reload').then(function (r) { info(r.apps ? 'Reload enviado ao app' : 'Nenhum app conectado', r.apps ? 'ok' : 'err'); });
   };
+  // Janela própria, reaproveitada se já estiver aberta.
   $('screenshot').onclick = function () {
-    info('capturando a tela…', 'busy');
-    api('GET', '/screenshot').then(function (blob) {
-      var img = $('shot').querySelector('img');
-      if (img.src) URL.revokeObjectURL(img.src);
-      img.src = URL.createObjectURL(blob);
-      $('shot').style.display = 'flex';
-      info('');
-    }).catch(function (e) { info(e.message, 'err'); });
+    var w = window.open('/__devbridge/mirror', 'devbridge-mirror', 'popup,width=440,height=920');
+    if (!w) return info('O navegador bloqueou a janela. Permita pop-ups de localhost:8100.', 'err');
+    w.focus();
   };
-  $('shot').onclick = closeShot;
   $('level').onchange = function () { clearLogs('Carregando…'); state.logSince = 0; pollLogs(); };
   $('clearLogs').onclick = function () { clearLogs('Lista limpa. Novos logs aparecem aqui.'); };
   document.addEventListener('keydown', function (ev) {
-    if (ev.key === 'Escape' && $('shot').style.display === 'flex') return closeShot();
     var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
     if (ev.key === '/' && !typing) { ev.preventDefault(); $('filter').focus(); $('filter').select(); }
   });

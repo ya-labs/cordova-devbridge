@@ -182,7 +182,8 @@ Abra `http://localhost:8100/__devbridge/` no navegador do PC:
 - lista de tabelas, grade, SQL com Ctrl+Enter e histórico;
 - logs do app ao vivo;
 - com "escrita" ligada: duplo clique edita a célula, "+ Registro" inclui, ✕ exclui (com confirmação);
-- botões para recarregar o app e tirar screenshot.
+- botão para recarregar o app;
+- botão "Tela", que abre a tela do celular ao vivo numa janela separada (`/__devbridge/mirror`): 4 a 5 quadros por segundo, espaço pausa e o download salva o quadro em PNG. Para não pesar no celular, a captura para quando a janela é minimizada ou fechada. Se o navegador bloquear a janela, permita pop-ups de `localhost:8100`.
 
 Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que trava no Chrome do PC. O servidor redireciona essa URL para o console; `/?app` força o app, se for mesmo necessário.
 

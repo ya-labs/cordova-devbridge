@@ -20,6 +20,8 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 | `src/sqlguard.js` | classifica o SQL como leitura ou escrita e exige uma instrução por chamada |
 | `src/devbuild.js` | prepare → patch do `config.xml` gerado → compile → `adb install` → `launchIfServerUp` (só reabre o app se o servidor responder) |
 | `src/adb.js` | reverse, `run-as`, screencap, install |
+| `src/mirror.js` | espelho da tela: capturas `screencap -p` em paralelo, só enquanto há quem peça quadros |
+| `src/ui/mirror.html` | janela do espelho (long-poll em `/api/mirror/frame`) |
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
 | `src/ui/index.html` | console web autocontido (sem CDN) |
 | `docs/MANUAL.md` | instalação e configuração de um app do zero, na ordem dos passos; solução de problemas. Mantenha em sincronia com o README e o código |
@@ -41,6 +43,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
 - **`reloadRestore`:** a volta à tela depois do reload é do app, não do devbridge, porque login e banco são específicos de cada app. O client guarda `{hash, app: hook.save()}` no `sessionStorage` (`devbridge.reload`, lido e apagado no boot seguinte, uma tentativa só) e chama `hook.restore(saved, done)` no `deviceready`. A camada "Recarregando…" vale para todo reload; sem hook, ela some no `deviceready`. O servidor injeta `/__devbridge/restore.js` depois do client e força o reload pela rota inicial.
 - **Logs com objetos:** cada entrada mantém `msg` (texto, usado pela CLI e pelo MCP) e, se algum argumento for objeto, `args` com uma cópia JSON para a árvore expansível do console web. Valores que o JSON não representa viram `{ __dvb: texto }` (undefined, função, circular, Error, Date, nó do DOM); a cópia para em 3000 nós ou 12 níveis. Erro é detectado pelo tipo interno, não por `instanceof`, que falha entre contextos.
+- **Espelho da tela sem dependência:** sem scrcpy/ffmpeg, o espelho é feito com `adb exec-out screencap -p` (~0,6 s por quadro no aparelho). Três capturas em paralelo dão ~4,7 qps (medido; 4 dão ~5,4, mas pesam mais no app em teste). Capturas terminam fora de ordem, então só se publica quadro de captura iniciada depois da que gerou o último (contador, não relógio). A janela pede por long-poll na API (com `X-Devbridge`); sem pedidos por 4 s os workers param, e a janela para de pedir quando fica oculta.
 - **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
 - **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
 - **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
@@ -64,7 +67,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 30/30.
+- `npm test`: 36/36.
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
@@ -99,7 +102,9 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
     - o redirecionamento do navegador do PC para o console;
     - incluir e excluir registros na grade do console (pedido da pessoa durante a validação);
     - `reloadRestore` e a camada "Recarregando…" (pedido da pessoa: o reload de JS não pode voltar ao login). Validado no aparelho pela pessoa;
-    - `docs/MANUAL.md` com instalação, configuração de app novo, `reloadRestore`, MCP e solução de problemas.
+    - `docs/MANUAL.md` com instalação, configuração de app novo, `reloadRestore`, MCP e solução de problemas;
+    - console redesenhado, com objetos expansíveis nos logs;
+    - tela do celular ao vivo numa janela separada (botão "Tela"). Validado no aparelho: 4,7 qps, workers param sem espectador.
 - A UI não tem teste automatizado de clique. A inclusão e a exclusão foram conferidas num Chrome headless via CDP, contra o app falso do `test/helpers.js`. Os testes de API cobrem as instruções que a grade envia.
 - Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);

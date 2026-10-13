@@ -10,6 +10,7 @@ const { resolveFile, injectClient, mimeOf } = require('./static');
 const { checkSql } = require('./sqlguard');
 const { resolveDatabase } = require('./config');
 const adb = require('./adb');
+const { Mirror } = require('./mirror');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
 const UI_DIR = path.join(__dirname, 'ui');
@@ -26,8 +27,10 @@ function isDesktopBrowser(ua) {
 }
 
 class DevServer {
-  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases } = {}) {
+  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {} } = {}) {
     this.config = config;
+    this.screencap = screencap;
+    this.mirror = new Mirror({ capture: () => this.screencap(), ...mirror });
     this.logger = logger;
     this.watchEnabled = watch;
     this.listDatabases = listDatabases;
@@ -57,6 +60,7 @@ class DevServer {
 
   close() {
     if (this.watcher) this.watcher.close();
+    this.mirror.stop();
     for (const c of this.clients.values()) c.res.end();
     for (const p of this.pending.values()) {
       clearTimeout(p.timer);
@@ -247,6 +251,7 @@ class DevServer {
     }
     if (p === '/__devbridge/events') return this.openEvents(req, res, url);
     if (p === '/__devbridge' || p === '/__devbridge/') return this.sendFile(res, path.join(UI_DIR, 'index.html'));
+    if (p === '/__devbridge/mirror') return this.sendFile(res, path.join(UI_DIR, 'mirror.html'));
     if (req.method === 'POST' && p === '/__devbridge/log') {
       const body = await readJson(req);
       this.addLogs(body.client, body.entries);
@@ -302,8 +307,24 @@ class DevServer {
           return this.json(res, 200, await this.tables(q.get('db')));
         case 'GET /schema':
           return this.json(res, 200, await this.schema(q.get('db'), q.get('table')));
+        case 'GET /mirror/frame': {
+          // Long-poll: responde quando houver quadro mais novo que "after".
+          const frame = await this.mirror.next(Number(q.get('after') || 0));
+          if (!frame) {
+            res.writeHead(204, { 'Cache-Control': 'no-store' });
+            return res.end();
+          }
+          if (frame.error) return this.fail(res, 503, frame.error);
+          res.writeHead(200, {
+            'Content-Type': 'image/png',
+            'Cache-Control': 'no-store',
+            'X-Frame-Seq': String(frame.seq),
+            'X-Frame-Ts': String(frame.ts),
+          });
+          return res.end(frame.png);
+        }
         case 'GET /screenshot': {
-          const png = await adb.screencap();
+          const png = await this.screencap();
           res.writeHead(200, { 'Content-Type': 'image/png', 'Cache-Control': 'no-store' });
           return res.end(png);
         }
