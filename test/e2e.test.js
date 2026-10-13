@@ -13,8 +13,8 @@ const { makeApp, fakeSqlitePlugin, runClient, until, wait } = require('./helpers
 
 const silent = { log() {} };
 
-async function setup({ allowWrites = false, globals, listDatabases } = {}) {
-  const root = makeApp({ allowWrites });
+async function setup({ allowWrites = false, globals, listDatabases, extraConfig } = {}) {
+  const root = makeApp({ allowWrites, ...extraConfig });
   const config = loadConfig({ cwd: root });
   const server = new DevServer(config, { logger: silent, listDatabases: listDatabases || (async () => []) });
   await server.listen();
@@ -178,6 +178,20 @@ test('salvar JS recarrega; salvar CSS só troca o <link>', async () => {
 
     await s.api.reload();
     await until(() => s.app.calls.reload === 2);
+    assert.deepEqual(s.app.calls.hrefsOnReload, [s.base + '/index.html#/home', s.base + '/index.html#/home']);
+  } finally {
+    await teardown(s);
+  }
+});
+
+test('reloadKeepRoute false: reload volta à rota inicial (sem hash)', async () => {
+  const s = await setup({ extraConfig: { reloadKeepRoute: false } });
+  try {
+    assert.equal((await s.api.status()).server.reloadKeepRoute, false);
+    fs.writeFileSync(path.join(s.config.wwwDir, 'templates/home.html'), '<div>novo</div>');
+    await until(() => s.app.calls.reload === 1);
+    assert.deepEqual(s.app.calls.hrefsOnReload, [s.base + '/index.html']);
+    assert.equal(s.app.ctx.location.hash, '');
   } finally {
     await teardown(s);
   }

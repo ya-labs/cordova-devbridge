@@ -101,7 +101,7 @@ function fakeSqlitePlugin(data) {
 
 // Roda o client real num vm com EventSource/XHR mínimos apontando para o servidor.
 function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
-  const calls = { reload: 0, logs: [] };
+  const calls = { reload: 0, logs: [], hrefsOnReload: [] };
   const listeners = {};
   const docListeners = {};
   const sources = [];
@@ -162,7 +162,19 @@ function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
       error: (...a) => calls.logs.push(['error', a]),
       debug: () => {},
     },
-    location: { href: baseUrl + '/index.html#/home', hash: '#/home', pathname: '/index.html', origin: baseUrl, reload: () => calls.reload++ },
+    location: {
+      href: baseUrl + '/index.html#/home', hash: '#/home', pathname: '/index.html', search: '', origin: baseUrl,
+      reload() {
+        calls.reload++;
+        calls.hrefsOnReload.push(this.href);
+      },
+    },
+    history: {
+      replaceState(state, title, url) {
+        ctx.location.href = new URL(url, baseUrl).href;
+        ctx.location.hash = new URL(url, baseUrl).hash;
+      },
+    },
     navigator: { userAgent: 'vm-test' },
     document: {
       addEventListener: (t, fn) => (docListeners[t] = fn),

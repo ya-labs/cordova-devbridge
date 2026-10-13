@@ -135,6 +135,7 @@ class DevServer {
         port: this.port,
         boot: this.boot,
         allowWrites: !!this.config.allowWrites,
+        reloadKeepRoute: this.config.reloadKeepRoute !== false,
         databases: this.config.databases,
         defaultDb: this.config.defaultDb,
         logs: this.logSeq,
@@ -287,7 +288,7 @@ class DevServer {
     res.write('retry: 1000\n\n');
     const client = { id, res, href: url.searchParams.get('href'), ua: url.searchParams.get('ua'), connectedAt: Date.now() };
     this.clients.set(id, client);
-    this.sendEvent(client, 'hello', { boot: this.boot });
+    this.sendEvent(client, 'hello', { boot: this.boot, reloadKeepRoute: this.config.reloadKeepRoute !== false });
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     this.logger.log(`[devbridge] app conectado (${id}) ${client.href || ''}`);
     req.on('close', () => {

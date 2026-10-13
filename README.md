@@ -72,6 +72,7 @@ Pack-Tracking:
 | `databases.<alias>.name` | arquivo usado em `sqlitePlugin.openDatabase`; aceita `*` |
 | `defaultDb` | alias usado quando `--db` não é informado |
 | `allowWrites` | libera `--write`, o `db_exec` do MCP e a edição da grade (padrão `false`) |
+| `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
 | `www`, `platformWww`, `cordova` | caminhos e comando, caso fujam do padrão |
 
 ## Uso diário
@@ -89,6 +90,8 @@ devbridge build
 O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev cai numa página de erro de conexão que não tenta de novo sozinha. Se isso acontecer, com o `start` rodando, use `devbridge launch`, que fecha e reabre o app.
 
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
+
+Se o boot do app depende da rota inicial (por exemplo, um `otherwise('/Aguarde')` que espera o `deviceready` e abre o SQLite antes de liberar as outras telas), o reload na mesma tela roda o controller antes da hora: aparecem `{{expressões}}` cruas e `executeSql` de `null` nos logs. Nesse caso, use `"reloadKeepRoute": false`. Para sair da tela quebrada sem reinstalar nada, rode `devbridge launch`.
 
 ```bash
 devbridge status                                   # app conectado, tela, conexões abertas

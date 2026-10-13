@@ -6,6 +6,7 @@
   var base = '/__devbridge';
   var clientId = Math.random().toString(36).slice(2, 10);
   var serverBoot = null;
+  var keepRoute = true;
   var deviceReady = false;
   var openedDbs = {};
   var logQueue = [];
@@ -180,6 +181,16 @@
     return swapped;
   }
 
+  // Sem keepRoute o reload volta à rota inicial, como uma abertura nova do app:
+  // há apps cujo boot (deviceready, abrir o SQLite) só acontece nela.
+  function reloadApp() {
+    flushLogs();
+    if (!keepRoute && location.hash && window.history && history.replaceState) {
+      history.replaceState(null, '', location.pathname + (location.search || ''));
+    }
+    location.reload();
+  }
+
   function connect() {
     var url = base + '/events?client=' + clientId +
       '&href=' + encodeURIComponent(location.href) +
@@ -188,17 +199,15 @@
 
     es.addEventListener('hello', function (ev) {
       var data = JSON.parse(ev.data);
+      keepRoute = data.reloadKeepRoute !== false;
       // Servidor reiniciou enquanto estávamos desconectados: arquivos podem ter mudado.
-      if (serverBoot && serverBoot !== data.boot) return location.reload();
+      if (serverBoot && serverBoot !== data.boot) return reloadApp();
       serverBoot = data.boot;
     });
-    es.addEventListener('reload', function () {
-      flushLogs();
-      location.reload();
-    });
+    es.addEventListener('reload', reloadApp);
     es.addEventListener('css', function (ev) {
       var paths = JSON.parse(ev.data).paths;
-      if (!swapCss(paths)) location.reload();
+      if (!swapCss(paths)) reloadApp();
     });
     es.addEventListener('sql', function (ev) {
       var req = JSON.parse(ev.data);

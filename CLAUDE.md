@@ -37,6 +37,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
   - a leitura roda em `readTransaction`, então o próprio plugin recusa escrita;
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
+- **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
 - **Bancos:** o client prefere a conexão global que o app já abriu (`db`, `dbpar`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
 
 ## Convenções
@@ -58,16 +59,23 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 24/24 (com a issue #1).
+- `npm test`: 25/25.
 - Contra um app real (Promotor-de-Vendas): os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
+- No aparelho (Android 15), pelo pacote #4:
+  - `build` instalando por cima do APK debug existente, sem desinstalar (24 s);
+  - o app conecta sozinho;
+  - logs do boot;
+  - SQL no banco global aberto e no banco por arquivo;
+  - `pull-db`, `screenshot` e `launch`;
+  - troca de CSS sem reload e reload de JS.
+  - `reloadKeepRoute: false` (#3): o reload volta sem hash e o boot passa pela rota inicial, sem erro.
 
 **Pendente (não declarar como validado):**
-- `devbridge build` instalando num celular real.
 - Fluxo completo de um app no modo dev: login, sincronização, câmera e galeria.
-- SQL contra `db`/`dbpar` reais no aparelho e `pull-db` (o `run-as` exige build debuggable).
-- `devbridge launch` com o servidor no ar, no aparelho.
+- SQL pela conexão global aberta depois do login, e `pull-db` desse banco.
+- Console web contra o app no aparelho.
 - MCP registrado num Claude Code de verdade.
 - Pack-Tracking: falta criar o `devbridge.config.json` e testar. A config de exemplo está no README.
 
@@ -76,7 +84,11 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android (Promotor-d
 Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 
 - O remoto é `ya-labs/cordova-devbridge`, um repo **público**. Não registre aqui nem em issues e PRs: branches, commits ou PRs dos apps que usam a ferramenta; serial de aparelho; dados de banco; nome de cliente. Esse contexto vem da pessoa, na conversa.
-- Issue #1 ("Build abre o app antes do servidor de desenvolvimento estar no ar"), branch `1-build-aguarda-servidor`. A entrega dela:
+- Issue pacote #4 ("Validação do devbridge em app real no aparelho"), branch `4-validacao-app-real`:
+  - reúne as correções que a validação revelar, cada uma num commit documentado;
+  - o PR sai com merge commit;
+  - a primeira entrega é a #3 (`reloadKeepRoute`).
+- Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
   - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);
   - o README com a ordem `start` → `build`.

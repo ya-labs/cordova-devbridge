@@ -11,6 +11,7 @@ const DEFAULTS = {
   platformWww: 'platforms/android/platform_www',
   cordova: 'cordova',
   allowWrites: false,
+  reloadKeepRoute: true,
   databases: {},
   defaultDb: null,
 };
