@@ -20,6 +20,11 @@ function globToRegExp(glob) {
   return new RegExp('^' + glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
 }
 
+// Navegador de PC: Mozilla sem Android. O WebView do app traz "Android" e o fetch do Node não traz "Mozilla".
+function isDesktopBrowser(ua) {
+  return /Mozilla/.test(ua || '') && !/Android/i.test(ua || '');
+}
+
 class DevServer {
   constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases } = {}) {
     this.config = config;
@@ -253,6 +258,13 @@ class DevServer {
       return this.json(res, 200, { ok: true });
     }
     if (p.startsWith('/__devbridge/')) return this.fail(res, 404, 'Rota devbridge desconhecida.');
+    // No Chrome do PC o app trava no prompt() do cordova.js e, por dividir o
+    // processo com as outras abas do mesmo site, trava também o console.
+    // Quem quiser o app mesmo assim usa ?app.
+    if ((p === '/' || p === '/index.html') && isDesktopBrowser(req.headers['user-agent']) && !url.searchParams.has('app')) {
+      res.writeHead(302, { Location: '/__devbridge/' });
+      return res.end();
+    }
     return this.serveStatic(req, res, p);
   }
 

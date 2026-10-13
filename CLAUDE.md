@@ -39,6 +39,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
 - **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
 - **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
+- **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
 - **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
 
 ## Convenções
@@ -60,7 +61,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 26/26.
+- `npm test`: 26/26 (o teste do index cobre o redirecionamento).
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.

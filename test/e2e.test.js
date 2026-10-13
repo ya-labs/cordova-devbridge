@@ -48,6 +48,15 @@ test('serve index com client injetado; templates e platform_www intactos', async
     assert.equal(await cordova.text(), '// cordova');
     assert.equal((await fetch(s.base + '/__devbridge/client.js')).status, 200);
     assert.equal((await fetch(s.base + '/nada.js')).status, 404);
+
+    const desktop = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) Chrome/140' };
+    const redir = await fetch(s.base + '/', { headers: desktop, redirect: 'manual' });
+    assert.equal(redir.status, 302);
+    assert.equal(redir.headers.get('location'), '/__devbridge/');
+    assert.equal((await fetch(s.base + '/index.html', { headers: desktop, redirect: 'manual' })).status, 302);
+    assert.ok((await (await fetch(s.base + '/?app', { headers: desktop })).text()).includes(CLIENT_TAG));
+    const webview = { 'User-Agent': 'Mozilla/5.0 (Linux; Android 15; wv) Chrome/156' };
+    assert.ok((await (await fetch(s.base + '/index.html', { headers: webview })).text()).includes(CLIENT_TAG));
   } finally {
     await teardown(s);
   }
