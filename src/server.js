@@ -88,6 +88,11 @@ class DevServer {
   }
 
   // ---- canal com o app --------------------------------------------------
+  // Com reloadRestore o app volta sozinho para a tela; o reload parte sempre da rota inicial.
+  keepRoute() {
+    return this.config.reloadKeepRoute !== false && !this.config.reloadRestoreFile;
+  }
+
   // Prefere o client que já disparou deviceready: uma aba do PC aberta em
   // localhost:8100 também carrega o client, mas não é o app.
   activeClient() {
@@ -148,7 +153,8 @@ class DevServer {
         port: this.port,
         boot: this.boot,
         allowWrites: !!this.config.allowWrites,
-        reloadKeepRoute: this.config.reloadKeepRoute !== false,
+        reloadKeepRoute: this.keepRoute(),
+        reloadRestore: this.config.reloadRestoreFile,
         clients: this.clients.size,
         databases: this.config.databases,
         defaultDb: this.config.defaultDb,
@@ -231,6 +237,11 @@ class DevServer {
     const p = url.pathname;
     if (p.startsWith('/__devbridge/api/')) return this.handleApi(req, res, url);
     if (p === '/__devbridge/client.js') return this.sendFile(res, CLIENT_JS);
+    if (p === '/__devbridge/restore.js') {
+      if (!this.config.reloadRestoreFile) return this.fail(res, 404, 'Sem "reloadRestore" na config.');
+      if (!fs.existsSync(this.config.reloadRestoreFile)) return this.fail(res, 404, `reloadRestore não encontrado: ${this.config.reloadRestoreFile}`);
+      return this.sendFile(res, this.config.reloadRestoreFile);
+    }
     if (p === '/__devbridge/events') return this.openEvents(req, res, url);
     if (p === '/__devbridge' || p === '/__devbridge/') return this.sendFile(res, path.join(UI_DIR, 'index.html'));
     if (req.method === 'POST' && p === '/__devbridge/log') {
@@ -311,7 +322,7 @@ class DevServer {
     res.write('retry: 1000\n\n');
     const client = { id, res, href: url.searchParams.get('href'), ua: url.searchParams.get('ua'), connectedAt: Date.now() };
     this.clients.set(id, client);
-    this.sendEvent(client, 'hello', { boot: this.boot, reloadKeepRoute: this.config.reloadKeepRoute !== false });
+    this.sendEvent(client, 'hello', { boot: this.boot, reloadKeepRoute: this.keepRoute() });
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     this.logger.log(`[devbridge] app conectado (${id}) ${client.href || ''}`);
     if (client.ua && !/Android/i.test(client.ua)) {
@@ -329,7 +340,7 @@ class DevServer {
     const file = resolveFile(roots, urlPath);
     if (!file) return this.fail(res, 404, `Não encontrado: ${urlPath}`);
     if (file === path.join(this.config.wwwDir, 'index.html')) {
-      const html = injectClient(await fsp.readFile(file, 'utf8'));
+      const html = injectClient(await fsp.readFile(file, 'utf8'), { restore: !!this.config.reloadRestoreFile });
       res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
       return res.end(req.method === 'HEAD' ? undefined : html);
     }

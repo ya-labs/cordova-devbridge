@@ -113,7 +113,7 @@ function fakeSqlitePlugin(data) {
 }
 
 // Roda o client real num vm com EventSource/XHR mínimos apontando para o servidor.
-function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
+function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
   const calls = { reload: 0, logs: [], hrefsOnReload: [] };
   const listeners = {};
   const docListeners = {};
@@ -192,11 +192,22 @@ function runClient(baseUrl, { sqlitePlugin, globals = {} } = {}) {
     document: {
       addEventListener: (t, fn) => (docListeners[t] = fn),
       querySelectorAll: () => links,
-      createElement: () => {
+      createElement: (tag) => {
+        if (tag !== 'a') return { setAttribute() {}, getElementsByTagName: () => [{}, {}] };
         const a = {};
         Object.defineProperty(a, 'href', { set(v) { a.pathname = new URL(v).pathname; } });
         return a;
       },
+      body: {
+        appendChild(n) { n.parentNode = this; },
+        removeChild(n) { n.parentNode = null; },
+      },
+    },
+    // Compartilhado entre clients do mesmo teste para simular o sessionStorage que sobrevive ao reload.
+    sessionStorage: {
+      getItem: (k) => (k in storage ? storage[k] : null),
+      setItem: (k, v) => { storage[k] = String(v); },
+      removeItem: (k) => { delete storage[k]; },
     },
     addEventListener: (t, fn) => (listeners[t] = fn),
     EventSource,

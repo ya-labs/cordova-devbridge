@@ -17,7 +17,122 @@
   document.addEventListener('deviceready', function () {
     deviceReady = true;
     post('/state', { client: clientId, href: location.href, ready: true });
+    startRestore();
   }, false);
+
+  // ---- reload com volta à tela --------------------------------------------
+  // Antes do reload, a rota e o que o app quiser guardar (save do hook de
+  // __devbridge.restore) vão para o sessionStorage. Depois do deviceready, o
+  // hook do app refaz o que precisar (login, banco) e volta para a tela.
+  // Enquanto isso, uma camada avisa que o app está recarregando.
+  var RELOAD_KEY = 'devbridge.reload';
+  var RESTORE_TIMEOUT = 30000;
+  var restoreHook = null;
+  var restoreTimer = null;
+  var pending = readPending();
+  var overlay = null;
+  var overlayLabel = null;
+  var overlayText = null;
+
+  function readPending() {
+    try {
+      var raw = window.sessionStorage && sessionStorage.getItem(RELOAD_KEY);
+      if (!raw) return null;
+      // Uma tentativa só: se o boot quebrar, o próximo reload não repete a restauração.
+      sessionStorage.removeItem(RELOAD_KEY);
+      return JSON.parse(raw);
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function savePending() {
+    var saved = { hash: location.hash || '', at: Date.now() };
+    if (restoreHook && typeof restoreHook.save === 'function') {
+      try {
+        saved.app = restoreHook.save();
+      } catch (e) {
+        pushLog('warn', ['[devbridge] save do reloadRestore falhou:', e]);
+      }
+    }
+    try {
+      sessionStorage.setItem(RELOAD_KEY, JSON.stringify(saved));
+    } catch (e) {
+      // sem sessionStorage o reload só não volta para a tela
+    }
+  }
+
+  function renderOverlay() {
+    if (overlayText === null) {
+      if (overlay && overlay.parentNode) overlay.parentNode.removeChild(overlay);
+      overlay = null;
+      return;
+    }
+    if (!document.body) return;
+    if (!overlay) {
+      overlay = document.createElement('div');
+      overlay.id = '__devbridge_overlay';
+      overlay.setAttribute('style', 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:2147483647;' +
+        'display:flex;align-items:center;justify-content:center;background:rgba(10,14,20,.55);' +
+        'font:600 15px/1.4 system-ui,sans-serif;color:#fff');
+      overlay.innerHTML = '<style>@keyframes __devbridge_spin{to{transform:rotate(360deg)}}</style>' +
+        '<div style="display:flex;align-items:center;padding:12px 18px;border-radius:999px;background:#1d2430;box-shadow:0 4px 18px rgba(0,0,0,.35)">' +
+        '<span style="width:16px;height:16px;margin-right:10px;border:3px solid rgba(255,255,255,.3);border-top-color:#fff;border-radius:50%;animation:__devbridge_spin .8s linear infinite"></span>' +
+        '<span></span></div>';
+      overlayLabel = overlay.getElementsByTagName('span')[1];
+      document.body.appendChild(overlay);
+    }
+    overlayLabel.textContent = overlayText;
+  }
+
+  function showOverlay(text) {
+    overlayText = text;
+    renderOverlay();
+  }
+
+  function hideOverlay() {
+    overlayText = null;
+    renderOverlay();
+  }
+
+  document.addEventListener('DOMContentLoaded', renderOverlay, false);
+
+  function finishRestore(err) {
+    if (!pending) return;
+    pending = null;
+    clearTimeout(restoreTimer);
+    hideOverlay();
+    if (err) pushLog('warn', ['[devbridge] o reload não voltou para a tela: ' + err]);
+  }
+
+  function startRestore() {
+    if (!pending) return;
+    if (!restoreHook || typeof restoreHook.restore !== 'function') return finishRestore();
+    restoreTimer = setTimeout(function () {
+      finishRestore('tempo esgotado (' + RESTORE_TIMEOUT / 1000 + ' s)');
+    }, RESTORE_TIMEOUT);
+    try {
+      restoreHook.restore(pending, function (err) { finishRestore(err); });
+    } catch (e) {
+      finishRestore(e.message || String(e));
+    }
+  }
+
+  // Espera cond() ficar verdadeira; para hooks de restauração que dependem do boot do app.
+  function waitFor(cond, cb, timeout) {
+    var limit = timeout || 20000;
+    var waited = 0;
+    (function tick() {
+      var ok = false;
+      try { ok = cond(); } catch (e) { ok = false; }
+      if (ok) return cb(null);
+      waited += 100;
+      if (waited >= limit) return cb('esperou ' + limit / 1000 + ' s pelo app');
+      setTimeout(tick, 100);
+    })();
+  }
+
+  if (pending) showOverlay('Recarregando' + (pending.hash ? ' · voltando para ' + pending.hash.replace(/^#!?\/?/, '') : '') + '…');
 
   function post(path, body) {
     try {
@@ -189,6 +304,8 @@
   // há apps cujo boot (deviceready, abrir o SQLite) só acontece nela.
   function reloadApp() {
     flushLogs();
+    showOverlay('Recarregando…');
+    savePending();
     if (!keepRoute && location.hash && window.history && history.replaceState) {
       history.replaceState(null, '', location.pathname + (location.search || ''));
     }
@@ -236,6 +353,13 @@
     });
   }
 
-  window.__devbridge = { client: clientId, flushLogs: flushLogs };
+  window.__devbridge = {
+    client: clientId,
+    flushLogs: flushLogs,
+    // O script do reloadRestore registra { save: fn() -> dados, restore: fn(salvo, done) }.
+    restore: function (hook) { restoreHook = hook; },
+    waitFor: waitFor,
+    overlayText: function () { return overlayText; },
+  };
   connect();
 })();

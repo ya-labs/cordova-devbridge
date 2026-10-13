@@ -10,6 +10,7 @@ const { DevServer } = require('../src/server');
 const { Api } = require('../src/api');
 const { CLIENT_TAG } = require('../src/static');
 const { makeApp, fakeSqlitePlugin, runClient, until, wait } = require('./helpers');
+const { RESTORE_TAG } = require('../src/static');
 
 const silent = { log() {} };
 
@@ -262,6 +263,72 @@ test('console: INSERT e DELETE por rowid que a grade envia passam só com escrit
     assert.match(hist, /INSERT INTO "CLIENTES" DEFAULT VALUES/);
     assert.match(hist, /DELETE FROM "CLIENTES" WHERE rowid = \?\t\[1\]/);
   } finally {
+    await teardown(s);
+  }
+});
+
+test('reloadRestore: injeta o script do app, guarda o estado e restaura depois do reload', async () => {
+  const s = await setup({ extraConfig: { reloadRestore: 'dev/restore.js', reloadKeepRoute: true } });
+  const storage = {};
+  let next;
+  try {
+    fs.mkdirSync(path.join(s.root, 'dev'));
+    fs.writeFileSync(path.join(s.root, 'dev/restore.js'), '/* hook */');
+    assert.ok((await (await fetch(s.base + '/')).text()).includes(RESTORE_TAG));
+    assert.equal(await (await fetch(s.base + '/__devbridge/restore.js')).text(), '/* hook */');
+    assert.equal((await s.api.status()).server.reloadKeepRoute, false);
+
+    // app antigo: o hook guarda dados; o reload salva rota + dados e mostra a camada
+    s.app.close();
+    await until(() => s.server.clients.size === 0);
+    const old = runClient(s.base, { storage });
+    old.ctx.__devbridge.restore({ save: () => ({ usuario: 7 }) });
+    await until(() => s.server.clients.size === 1);
+    await s.api.reload();
+    await until(() => old.calls.reload === 1);
+    assert.equal(old.ctx.__devbridge.overlayText(), 'Recarregando…');
+    assert.deepEqual(old.calls.hrefsOnReload, [s.base + '/index.html']);
+    const saved = JSON.parse(storage['devbridge.reload']);
+    assert.equal(saved.hash, '#/home');
+    assert.deepEqual(saved.app, { usuario: 7 });
+    old.close();
+
+    // app novo: camada desde o início, hook recebe o salvo depois do deviceready
+    next = runClient(s.base, { storage });
+    assert.equal(next.ctx.__devbridge.overlayText(), 'Recarregando · voltando para home…');
+    assert.equal(storage['devbridge.reload'], undefined);
+    let got = null;
+    let done = null;
+    next.ctx.__devbridge.restore({ restore: (sv, cb) => { got = sv; done = cb; } });
+    next.fireDeviceReady();
+    assert.deepEqual(JSON.parse(JSON.stringify(got.app)), { usuario: 7 });
+    assert.equal(got.hash, '#/home');
+    assert.equal(next.ctx.__devbridge.overlayText(), 'Recarregando · voltando para home…');
+    done('sem usuário');
+    assert.equal(next.ctx.__devbridge.overlayText(), null);
+    const r = await until(async () => {
+      const l = await s.api.logs({ since: 0, level: 'warn' });
+      return l.entries.length && l;
+    });
+    assert.match(r.entries[0].msg, /não voltou para a tela: sem usuário/);
+  } finally {
+    if (next) next.close();
+    await teardown(s);
+  }
+});
+
+test('sem reloadRestore: a camada some no deviceready e restore.js responde 404', async () => {
+  const s = await setup();
+  const storage = { 'devbridge.reload': JSON.stringify({ hash: '#/home', at: 1 }) };
+  const app = runClient(s.base, { storage });
+  try {
+    assert.ok(!(await (await fetch(s.base + '/')).text()).includes(RESTORE_TAG));
+    assert.equal((await fetch(s.base + '/__devbridge/restore.js')).status, 404);
+    assert.match(app.ctx.__devbridge.overlayText(), /^Recarregando/);
+    app.fireDeviceReady();
+    assert.equal(app.ctx.__devbridge.overlayText(), null);
+  } finally {
+    app.close();
     await teardown(s);
   }
 });

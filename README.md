@@ -65,6 +65,7 @@ Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 | `defaultDb` | alias usado quando `--db` não é informado |
 | `allowWrites` | libera `--write`, o `db_exec` do MCP e a edição da grade (padrão `false`) |
 | `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
+| `reloadRestore` | script do app (fora do `www/`) que guarda o estado antes do reload e volta para a tela depois do boot; implica reload pela rota inicial |
 | `www`, `platformWww`, `cordova` | caminhos e comando, caso fujam do padrão |
 
 ## Uso diário
@@ -84,6 +85,24 @@ O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
 
 Se o boot do app depende da rota inicial (por exemplo, um `otherwise('/inicio')` que espera o `deviceready` e abre o SQLite antes de liberar as outras telas), o reload na mesma tela roda o controller antes da hora: aparecem `{{expressões}}` cruas e `executeSql` de `null` nos logs. Nesse caso, use `"reloadKeepRoute": false`. Para sair da tela quebrada sem reinstalar nada, rode `devbridge launch`.
+
+Para voltar à mesma tela mesmo assim (por exemplo, com o usuário logado), use `"reloadRestore": "devbridge.restore.js"`. O script fica na raiz do app, fora do `www/` e portanto fora do build, e o servidor o injeta logo depois do client:
+
+```js
+__devbridge.restore({
+  // antes do reload: o que precisa sobreviver (vai para o sessionStorage)
+  save: function () { return { usuario: Sessao.usuario() }; },
+  // depois do deviceready: refaz o login, abre o banco e volta para saved.hash
+  restore: function (saved, done) {
+    __devbridge.waitFor(function () { return appPronto(); }, function (err) {
+      if (err || !saved.app) return done(err);
+      Sessao.entrar(saved.app.usuario, function () { location.hash = saved.hash; done(); });
+    });
+  }
+});
+```
+
+Em todo reload aparece uma camada "Recarregando…" no app, que some quando o `done()` é chamado. Se o `done()` não vier em 30 s, ou vier com erro, a camada some do mesmo jeito e o motivo vai para os logs.
 
 ```bash
 devbridge status                                   # app conectado, tela, conexões abertas
