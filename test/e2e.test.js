@@ -211,3 +211,21 @@ test('status consulta o app; sem app conectado a API explica o motivo', async ()
     await teardown(s);
   }
 });
+
+test('aba do PC conectada depois não rouba o app que já disparou deviceready', async () => {
+  const s = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
+  const browser = runClient(s.base, { sqlitePlugin: undefined });
+  try {
+    s.app.fireDeviceReady();
+    await until(() => s.server.readyClients.size === 1);
+    await until(() => s.server.clients.size === 2);
+    const st = await s.api.status();
+    assert.equal(st.server.clients, 2);
+    assert.equal(st.app.globals.db, true);
+    const r = await s.api.sql({ sql: 'select * from CLIENTES', db: 'user' });
+    assert.equal(r.rows.length, 2);
+  } finally {
+    browser.close();
+    await teardown(s);
+  }
+});

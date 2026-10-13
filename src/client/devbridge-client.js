@@ -13,7 +13,11 @@
   var logTimer = null;
   var original = {};
 
-  document.addEventListener('deviceready', function () { deviceReady = true; }, false);
+  // Avisa o servidor: só o WebView do app dispara deviceready, uma aba do PC não.
+  document.addEventListener('deviceready', function () {
+    deviceReady = true;
+    post('/state', { client: clientId, href: location.href, ready: true });
+  }, false);
 
   function post(path, body) {
     try {

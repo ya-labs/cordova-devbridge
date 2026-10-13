@@ -38,6 +38,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
 - **Reload mantém a rota por padrão** (`reloadKeepRoute: true`). Com `false`, o client limpa o hash via `history.replaceState` antes do `location.reload()`, nos quatro caminhos de reload (arquivo salvo, `reload`/`app_reload`, servidor reiniciado e CSS sem `<link>` correspondente). A opção chega ao client no evento `hello`. Motivo: há apps cujo boot só acontece na rota do `otherwise` (#3).
+- **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
 - **Bancos:** o client prefere a conexão global que o app já abriu (por exemplo, `db`). Sem ela, abre pelo nome. Um nome com `*` é resolvido via `adb run-as <pkg> ls databases`.
 
 ## Convenções
@@ -59,7 +60,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 25/25.
+- `npm test`: 26/26.
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
@@ -71,10 +72,11 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
   - `pull-db`, `screenshot` e `launch`;
   - troca de CSS sem reload e reload de JS.
   - `reloadKeepRoute: false` (#3): o reload volta sem hash e o boot passa pela rota inicial, sem erro.
+  - depois do login: `tables`, `sql` e `schema` pela conexão global e `pull-db` do banco com `*` (copia todos os arquivos que casam);
+  - câmera e foto do checklist com a origem `http://localhost`: fotos gravadas no SQLite, nenhum erro nos logs.
 
 **Pendente (não declarar como validado):**
-- Fluxo completo de um app no modo dev: login, sincronização, câmera e galeria.
-- SQL pela conexão global aberta depois do login, e `pull-db` desse banco.
+- Escolha de foto pela galeria (confirmar com a pessoa se foi testada).
 - Console web contra o app no aparelho.
 - MCP registrado num Claude Code de verdade.
 - Um segundo app real, com um banco só.
@@ -87,7 +89,7 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 - Issue pacote #4 ("Validação do devbridge em app real no aparelho"), branch `4-validacao-app-real`:
   - reúne as correções que a validação revelar, cada uma num commit documentado;
   - o PR sai com merge commit;
-  - a primeira entrega é a #3 (`reloadKeepRoute`).
+  - entregas: #3 (`reloadKeepRoute`) e a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo).
 - Issue #1 (PR #2, mergeado). A entrega dela:
   - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
   - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);

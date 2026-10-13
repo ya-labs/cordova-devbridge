@@ -99,6 +99,8 @@ devbridge screenshot
 
 **Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, um duplo clique na célula edita o valor: Enter grava, Esc cancela, e `NULL` grava nulo. Ctrl+Enter executa o SQL.
 
+No PC, abra sempre `/__devbridge/`. A raiz `http://localhost:8100/` é o próprio app: no Chrome do PC ele trava (o `cordova.js` usa `prompt()` como ponte nativa), e o servidor avisa no log. Mesmo com essa aba aberta, SQL e status continuam indo para o celular, porque o servidor prefere o client que disparou `deviceready`.
+
 **Segurança:**
 - Leitura é o padrão. A escrita exige `allowWrites` **e** um pedido explícito (`--write`, `db_exec` ou o checkbox).
 - Leituras rodam em `readTransaction`, então o próprio plugin recusa escrita.

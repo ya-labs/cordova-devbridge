@@ -28,6 +28,7 @@ class DevServer {
     this.listDatabases = listDatabases;
     this.boot = crypto.randomBytes(4).toString('hex');
     this.clients = new Map();
+    this.readyClients = new Set();
     this.pending = new Map();
     this.logs = [];
     this.logSeq = 0;
@@ -82,9 +83,16 @@ class DevServer {
   }
 
   // ---- canal com o app --------------------------------------------------
+  // Prefere o client que já disparou deviceready: uma aba do PC aberta em
+  // localhost:8100 também carrega o client, mas não é o app.
   activeClient() {
     let latest = null;
-    for (const c of this.clients.values()) if (!latest || c.connectedAt >= latest.connectedAt) latest = c;
+    for (const c of this.clients.values()) {
+      const better = !latest
+        || (this.readyClients.has(c.id) && !this.readyClients.has(latest.id))
+        || (this.readyClients.has(c.id) === this.readyClients.has(latest.id) && c.connectedAt >= latest.connectedAt);
+      if (better) latest = c;
+    }
     return latest;
   }
 
@@ -136,6 +144,7 @@ class DevServer {
         boot: this.boot,
         allowWrites: !!this.config.allowWrites,
         reloadKeepRoute: this.config.reloadKeepRoute !== false,
+        clients: this.clients.size,
         databases: this.config.databases,
         defaultDb: this.config.defaultDb,
         logs: this.logSeq,
@@ -239,6 +248,8 @@ class DevServer {
       const body = await readJson(req);
       const c = this.clients.get(body.client);
       if (c) c.href = body.href;
+      // Guardado por id: o EventSource reconecta com o mesmo id e a marca continua valendo.
+      if (body.ready) this.readyClients.add(body.client);
       return this.json(res, 200, { ok: true });
     }
     if (p.startsWith('/__devbridge/')) return this.fail(res, 404, 'Rota devbridge desconhecida.');
@@ -291,6 +302,9 @@ class DevServer {
     this.sendEvent(client, 'hello', { boot: this.boot, reloadKeepRoute: this.config.reloadKeepRoute !== false });
     const ping = setInterval(() => res.write(': ping\n\n'), 15000);
     this.logger.log(`[devbridge] app conectado (${id}) ${client.href || ''}`);
+    if (client.ua && !/Android/i.test(client.ua)) {
+      this.logger.log('[devbridge] aviso: essa conexão é de um navegador do PC, não do app. O console fica em /__devbridge/.');
+    }
     req.on('close', () => {
       clearInterval(ping);
       if (this.clients.get(id) === client) this.clients.delete(id);
