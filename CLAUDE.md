@@ -34,6 +34,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Resolução por arquivo:** primeiro `platform_www`, depois `www`. Há app real com `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
 - **O client é injetado só em `www/index.html`.** Os templates do AngularJS também são `.html` e chegam por XHR. Ele entra como primeiro script do `<head>`, para capturar logs do boot e continuar recebendo reload mesmo se o app quebrar.
 - **O client é ES5** (`var`, `function`), para não depender da versão do WebView.
+- **Client na ignore list do DevTools.** O wrapper de `console.*` faria todo log apontar para a linha dele no `chrome://inspect`. O servidor acrescenta `//# sourceMappingURL=/__devbridge/client.js.map` ao `client.js` e gera um map de identidade com `x_google_ignoreList`. Com isso o DevTools pula os frames do client e linka a linha do app.
 - **Segurança do banco:**
   - a leitura é o padrão;
   - a escrita exige `allowWrites` na config **e** um pedido explícito (`--write`, `db_exec` ou o checkbox da UI);

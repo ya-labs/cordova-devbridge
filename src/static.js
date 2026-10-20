@@ -80,4 +80,27 @@ function injectClient(html, { restore = false } = {}) {
   return tags + '\n' + html;
 }
 
-module.exports = { resolveFile, injectClient, mimeOf, CLIENT_TAG, RESTORE_TAG };
+// O client embrulha console.*, então o DevTools apontaria todo log para a
+// linha do wrapper. Um source map de identidade com o arquivo na ignore list
+// faz o DevTools pular esses frames e mostrar a linha do app que chamou o log.
+const CLIENT_MAP_URL = '/__devbridge/client.js.map';
+
+function withSourceMap(source) {
+  return source.replace(/\n?$/, '\n') + '//# sourceMappingURL=' + CLIENT_MAP_URL + '\n';
+}
+
+function ignoreListMap(source, name) {
+  const lines = source.split('\n').length;
+  return {
+    version: 3,
+    file: 'client.js',
+    sources: [name],
+    sourcesContent: [source],
+    names: [],
+    mappings: Array.from({ length: lines }, (_, i) => (i === 0 ? 'AAAA' : 'AACA')).join(';'),
+    ignoreList: [0],
+    x_google_ignoreList: [0],
+  };
+}
+
+module.exports = { resolveFile, injectClient, mimeOf, withSourceMap, ignoreListMap, CLIENT_TAG, RESTORE_TAG, CLIENT_MAP_URL };
