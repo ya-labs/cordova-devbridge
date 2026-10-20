@@ -221,6 +221,7 @@ Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `l
 | `pull-db`/`run-as` falha (`not debuggable`) | APK instalado não é debug | `dvb build` (ele compila em debug) |
 | Console web fica carregando para sempre | aba de `localhost:8100/` (o app) aberta no Chrome, travando o processo do site | feche todas as abas de `localhost:8100` (Shift+Esc no Chrome) e abra só `/__devbridge/` |
 | SQL ou status parecem vir de outro lugar | outra página com o client conectada | `dvb status` mostra o `userAgent` do client ativo e `server.clients`; feche a aba extra |
+| No `chrome://inspect`, todo log aponta para `client.js` | source maps desligados no DevTools; sem o map, o client não entra na ignore list | DevTools → Settings → Preferences → Sources → **Enable JavaScript source maps**; em Settings → Ignore list, deixe ligado **Automatically add known third-party scripts to ignore list** |
 | Mudança de CSS não aparece | o arquivo não está ligado por `<link>` no `index.html` | o devbridge recarrega a página nesse caso; confira `dvb logs` |
 | `AVISO: AndroidManifest sem usesCleartextTraffic` no build | falta o plugin de cleartext | instale `cordova-plugin-enable-cleartext-traffic` e rode `dvb build` |
 | Mudou plugin nativo, `config.xml`, ícone ou permissão e nada mudou | essas coisas vivem no APK, não no `www/` | `dvb build` |
