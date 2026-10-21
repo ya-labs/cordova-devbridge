@@ -6,7 +6,7 @@ const http = require('node:http');
 const path = require('node:path');
 const crypto = require('node:crypto');
 
-const { resolveFile, injectClient, mimeOf } = require('./static');
+const { resolveFile, injectClient, mimeOf, withSourceMap, ignoreListMap, CLIENT_MAP_URL } = require('./static');
 const { checkSql } = require('./sqlguard');
 const { resolveDatabase } = require('./config');
 const adb = require('./adb');
@@ -243,7 +243,8 @@ class DevServer {
     const url = new URL(req.url, 'http://localhost');
     const p = url.pathname;
     if (p.startsWith('/__devbridge/api/')) return this.handleApi(req, res, url);
-    if (p === '/__devbridge/client.js') return this.sendFile(res, CLIENT_JS);
+    if (p === '/__devbridge/client.js') return this.sendText(res, mimeOf(CLIENT_JS), withSourceMap(await fsp.readFile(CLIENT_JS, 'utf8')));
+    if (p === CLIENT_MAP_URL) return this.json(res, 200, ignoreListMap(await fsp.readFile(CLIENT_JS, 'utf8'), 'devbridge-client.js'));
     if (p === '/__devbridge/restore.js') {
       if (!this.config.reloadRestoreFile) return this.fail(res, 404, 'Sem "reloadRestore" na config.');
       if (!fs.existsSync(this.config.reloadRestoreFile)) return this.fail(res, 404, `reloadRestore não encontrado: ${this.config.reloadRestoreFile}`);
@@ -375,6 +376,11 @@ class DevServer {
     res.writeHead(200, { 'Content-Type': mimeOf(file), 'Cache-Control': 'no-store' });
     if (headOnly) return res.end();
     fs.createReadStream(file).on('error', () => res.end()).pipe(res);
+  }
+
+  sendText(res, type, text) {
+    res.writeHead(200, { 'Content-Type': type, 'Cache-Control': 'no-store' });
+    res.end(text);
   }
 
   json(res, status, body) {

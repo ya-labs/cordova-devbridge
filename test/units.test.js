@@ -7,7 +7,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const { isReadOnly, checkSql } = require('../src/sqlguard');
-const { resolveFile, injectClient, CLIENT_TAG } = require('../src/static');
+const { resolveFile, injectClient, withSourceMap, ignoreListMap, CLIENT_TAG } = require('../src/static');
 const { patchConfigXml } = require('../src/devbuild');
 const { loadConfig, resolveDatabase } = require('../src/config');
 const { globToRegExp } = require('../src/server');
@@ -115,4 +115,15 @@ test('glob de banco e tabela do terminal', () => {
   const out = table(['a', 'b'], [{ a: 1, b: null }, { a: 'xyz', b: 'ok' }]);
   assert.match(out, /^a   │ b {3}\n/);
   assert.match(out, /NULL/);
+});
+
+test('client na ignore list: map de identidade e referência no fim do arquivo', () => {
+  const src = 'var a;\n\nconsole.log(a);\n';
+  const map = ignoreListMap(src, 'devbridge-client.js');
+  assert.equal(map.mappings, 'AAAA;AACA;AACA;AACA');
+  assert.deepEqual(map.x_google_ignoreList, [0]);
+  assert.deepEqual(map.ignoreList, [0]);
+  assert.deepEqual(map.sourcesContent, [src]);
+  assert.equal(withSourceMap(src), src + '//# sourceMappingURL=/__devbridge/client.js.map\n');
+  assert.equal(withSourceMap('x'), 'x\n//# sourceMappingURL=/__devbridge/client.js.map\n');
 });

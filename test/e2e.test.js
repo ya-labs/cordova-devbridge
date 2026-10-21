@@ -52,7 +52,11 @@ test('serve index com client injetado; templates e platform_www intactos', async
     const cordova = await fetch(s.base + '/cordova.js');
     assert.equal(cordova.headers.get('content-type'), 'text/javascript; charset=utf-8');
     assert.equal(await cordova.text(), '// cordova');
-    assert.equal((await fetch(s.base + '/__devbridge/client.js')).status, 200);
+    const client = await fetch(s.base + '/__devbridge/client.js');
+    assert.equal(client.status, 200);
+    assert.match(await client.text(), /\n\/\/# sourceMappingURL=\/__devbridge\/client\.js\.map\n$/);
+    const map = await (await fetch(s.base + '/__devbridge/client.js.map')).json();
+    assert.deepEqual(map.x_google_ignoreList, [0]);
     assert.equal((await fetch(s.base + '/nada.js')).status, 404);
 
     const desktop = { 'User-Agent': 'Mozilla/5.0 (X11; Linux x86_64) Chrome/140' };
