@@ -122,6 +122,10 @@ devbridge schema pedidos
 devbridge storage local                            # chaves do localStorage (session, native também)
 devbridge storage native config                    # valor de uma chave do NativeStorage
 devbridge storage local tema --set claro           # grava (--remove apaga); vai para .devbridge/storage-history.log
+devbridge tap 540 1200                             # toca na tela (pixels da captura)
+devbridge swipe 540 1800 540 600                   # arrasta (rolar lista)
+devbridge type "Mercado A"                         # digita no campo com foco (acento vai pelo app)
+devbridge key back                                 # back, enter, del, tab, home, escape…
 devbridge go /pedidos/12                           # leva o app à rota e mostra se ele redirecionou
 devbridge eval "location.hash"                     # JavaScript no app
 devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
@@ -148,6 +152,8 @@ Ctrl+Enter executa o SQL.
 **JavaScript no app:** o rodapé do painel "Console do app" tem uma linha de comando, como a do DevTools. Enter executa, Shift+Enter quebra linha e ↑/↓ percorrem as expressões anteriores. A expressão e o resultado entram na lista de logs, com objetos expansíveis e erros em vermelho. Usa a mesma API do `app_eval`, então tudo vai para o `.devbridge/eval-history.log`.
 
 **Tela ao vivo:** o botão "Tela" do console abre `http://localhost:8100/__devbridge/mirror` numa janela separada, espelhando o celular (cerca de 4 a 5 quadros por segundo, por `adb screencap`). Espaço pausa; o botão de download salva o quadro atual em PNG. A captura só roda enquanto a janela está aberta e visível.
+
+Com o botão de mão ("Controlar") ligado, a janela controla o celular: clique toca, arrastar desliza e o teclado digita (Enter, Backspace, Tab e setas viram teclas; Esc é voltar). Desligado, a janela só mostra.
 
 No PC, a raiz `http://localhost:8100/` redireciona para o console. O app em si trava no Chrome do PC, porque o `cordova.js` usa `prompt()` como ponte nativa, e essa aba travada derruba junto as outras abas do mesmo site. Para abrir o app mesmo assim, use `/?app`. Mesmo com essa aba aberta, SQL e status continuam indo para o celular, porque o servidor prefere o client que disparou `deviceready`.
 
@@ -177,6 +183,7 @@ Ferramentas expostas:
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
+- `app_tap`, `app_swipe`, `app_type` e `app_key` (tocar, arrastar, digitar e teclas, com coordenadas da imagem do `app_screenshot`)
 - `db_snapshot`, `db_restore` e `db_snapshots` (salvar e voltar o estado dos bancos para repetir um teste)
 - `app_storage` (localStorage, sessionStorage e NativeStorage: lista, lê, grava e apaga)
 - `app_navigate` (leva o app a uma rota e diz se ele redirecionou)

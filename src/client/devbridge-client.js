@@ -683,6 +683,46 @@
     ns.remove(req.key, function () { reply(true, { area: 'native', key: req.key, action: 'remove', removed: true }); }, fail);
   }
 
+  // ---- texto no campo focado ---------------------------------------------
+  // Para o que o "adb input text" não digita (acento, quebra de linha): insere no
+  // campo com foco e dispara input/change, que é o que o ng-model escuta.
+  function fireEvent(el, type) {
+    var ev = document.createEvent('Event');
+    ev.initEvent(type, true, true);
+    el.dispatchEvent(ev);
+  }
+
+  function describeField(el) {
+    var d = String(el.tagName || '').toLowerCase();
+    if (el.id) d += '#' + el.id;
+    var model = el.getAttribute && (el.getAttribute('ng-model') || el.getAttribute('name'));
+    if (model) d += '[' + model + ']';
+    return d;
+  }
+
+  function runType(req, reply) {
+    var el = document.activeElement;
+    var tag = el && String(el.tagName || '').toUpperCase();
+    if (!el || !(tag === 'INPUT' || tag === 'TEXTAREA' || el.isContentEditable)) {
+      return reply(false, null, 'Nenhum campo de texto com foco no app: toque no campo antes (app_tap).');
+    }
+    var text = String(req.text);
+    if (el.isContentEditable) {
+      document.execCommand('insertText', false, text);
+    } else {
+      var v = String(el.value || '');
+      var start = typeof el.selectionStart === 'number' ? el.selectionStart : v.length;
+      var end = typeof el.selectionEnd === 'number' ? el.selectionEnd : v.length;
+      el.value = v.slice(0, start) + text + v.slice(end);
+      try { el.setSelectionRange(start + text.length, start + text.length); } catch (e) { /* type sem seleção (number, email) */ }
+      fireEvent(el, 'input');
+      fireEvent(el, 'change');
+    }
+    var out = { field: describeField(el), length: text.length };
+    if (String(el.type).toLowerCase() !== 'password') out.value = String(el.value || el.textContent || '').slice(0, 500);
+    reply(true, out);
+  }
+
   // ---- navegação ---------------------------------------------------------
   // A rota segue o prefixo que o app já usa (#! ou #). A resposta espera o hash
   // ficar parado: uma guarda de login ou o otherwise do router pode redirecionar.
@@ -826,6 +866,14 @@
       var req = JSON.parse(ev.data);
       try {
         runSql(req, replyFor(req.id));
+      } catch (e) {
+        replyFor(req.id)(false, null, e.message || String(e));
+      }
+    });
+    es.addEventListener('type', function (ev) {
+      var req = JSON.parse(ev.data);
+      try {
+        runType(req, replyFor(req.id));
       } catch (e) {
         replyFor(req.id)(false, null, e.message || String(e));
       }

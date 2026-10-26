@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const { splitSql } = require('../src/sqlguard');
 const { createSnapshot, restoreSnapshot, listSnapshots } = require('../src/snapshot');
@@ -44,6 +44,11 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   schema <TABELA> [--db X]   colunas e índices
   pull-db [--db X] [--out DIR]
                              copia o .db do aparelho (adb run-as) para abrir no PC
+  tap <X> <Y>                toca na tela (pixels da captura)
+  swipe <X1> <Y1> <X2> <Y2> [--ms N]
+                             arrasta na tela
+  type "<TEXTO>" [--dom]     digita no campo com foco (acento vai pelo app)
+  key <TECLA>                back, enter, del, tab, home, escape…
   db-snapshot <NOME> [--db X] salva os bancos do app em .devbridge/snapshots/<NOME>
   db-restore <NOME>          volta os bancos ao snapshot (fecha e reabre o app)
   db-snapshots               lista os snapshots
@@ -52,7 +57,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set', '--ms']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -254,6 +259,14 @@ async function main() {
     }
     case 'pull-db':
       return cmdPullDb(config, args.flags);
+    case 'tap':
+      return console.log(inputResult(await api.input({ action: 'tap', x: args._[1], y: args._[2] })));
+    case 'swipe':
+      return console.log(inputResult(await api.input({ action: 'swipe', x1: args._[1], y1: args._[2], x2: args._[3], y2: args._[4], durationMs: args.flags.ms })));
+    case 'type':
+      return console.log(inputResult(await api.input({ action: 'text', text: args._.slice(1).join(' '), via: args.flags.dom ? 'dom' : 'auto' })));
+    case 'key':
+      return console.log(inputResult(await api.input({ action: 'key', key: args._[1] })));
     case 'db-snapshot':
     case 'db-restore': {
       // Sem servidor: reabre só se o start estiver no ar (APK dev sem servidor fica na tela de erro).

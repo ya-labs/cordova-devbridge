@@ -30,6 +30,9 @@
   .btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
   .btn:hover { background: #1d222d; color: var(--text); border-color: var(--line); }
   .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+  .btn.on { color: var(--accent); border-color: var(--accent); }
+  .btn svg { width: 16px; height: 16px; }
+  .phone.control #screen { cursor: crosshair; touch-action: none; user-select: none; }
 
   main { display: grid; place-items: center; padding: 14px; min-height: 0; position: relative; }
   .phone { position: relative; padding: 8px; border-radius: 26px; background: #050608; box-shadow: 0 20px 60px rgba(0, 0, 0, .6), inset 0 0 0 1px #2a2f3a; max-height: 100%; display: flex; }
@@ -52,6 +55,9 @@
   <span class="live" id="live"><span class="dot"></span><span id="liveText">conectando…</span></span>
   <span class="meta" id="fps"></span>
   <span class="route" id="route" title="Tela atual do app"></span>
+  <button class="btn" id="control" title="Controlar o celular: clique toca, arraste desliza, teclado digita (Esc = voltar)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L4.6 15.9a1.5 1.5 0 0 1 2.3-1.9L9 16"/></svg>
+  </button>
   <button class="btn" id="pause" title="Pausar (espaço)"></button>
   <button class="btn" id="save" title="Salvar quadro como PNG">
     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg>
@@ -163,6 +169,79 @@
     }).catch(function () { $('route').textContent = ''; });
   }
 
+  // ---- controle ----
+  // Clique vira toque, arrasto vira deslize e o teclado digita no celular. As
+  // ações vão em fila para texto e teclas chegarem na ordem em que foram feitos.
+  var control = false;
+  var drag = null;
+  var typed = '';
+  var typeTimer = null;
+  var queue = Promise.resolve();
+  var KEYMAP = { Enter: 'enter', Backspace: 'del', Escape: 'back', Tab: 'tab', ArrowUp: 'up', ArrowDown: 'down', ArrowLeft: 'left', ArrowRight: 'right' };
+
+  function sendInput(body) {
+    queue = queue.then(function () {
+      return fetch('/__devbridge/api/input', {
+        method: 'POST',
+        headers: { 'X-Devbridge': '1', 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      }).then(function (res) {
+        return res.json().then(function (d) { if (!res.ok) throw new Error(d.error || ('HTTP ' + res.status)); });
+      }).catch(function (e) { toast(e.message); });
+    });
+  }
+
+  // Pixels do aparelho, descontando as faixas do object-fit: contain.
+  function devicePoint(ev) {
+    var img = $('screen');
+    if (!img.naturalWidth) return null;
+    var r = img.getBoundingClientRect();
+    var scale = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
+    var x = (ev.clientX - r.left - (r.width - img.naturalWidth * scale) / 2) / scale;
+    var y = (ev.clientY - r.top - (r.height - img.naturalHeight * scale) / 2) / scale;
+    if (x < 0 || y < 0 || x > img.naturalWidth || y > img.naturalHeight) return null;
+    return { x: Math.round(x), y: Math.round(y), cx: ev.clientX, cy: ev.clientY };
+  }
+
+  function flushTyped() {
+    clearTimeout(typeTimer);
+    typeTimer = null;
+    if (!typed) return;
+    sendInput({ action: 'text', text: typed });
+    typed = '';
+  }
+
+  function setControl(on) {
+    control = on;
+    $('control').classList.toggle('on', on);
+    $('phone').classList.toggle('control', on);
+    toast(on ? 'Controle ligado: clique toca, arraste desliza, teclado digita' : 'Controle desligado');
+  }
+
+  $('control').onclick = function () { setControl(!control); };
+  $('screen').addEventListener('dragstart', function (ev) { ev.preventDefault(); });
+  $('screen').addEventListener('pointerdown', function (ev) {
+    if (!control) return;
+    ev.preventDefault();
+    drag = { p: devicePoint(ev), t: Date.now() };
+  });
+  $('screen').addEventListener('pointerup', function (ev) {
+    if (!control || !drag) return;
+    var a = drag.p;
+    var b = devicePoint(ev);
+    var ms = Date.now() - drag.t;
+    drag = null;
+    if (!a || !b) return;
+    flushTyped();
+    if (Math.abs(b.cx - a.cx) + Math.abs(b.cy - a.cy) < 8) {
+      sendInput({ action: 'tap', x: a.x, y: a.y });
+      toast('Toque em ' + a.x + ', ' + a.y);
+    } else {
+      sendInput({ action: 'swipe', x1: a.x, y1: a.y, x2: b.x, y2: b.y, durationMs: Math.min(Math.max(ms, 100), 2000) });
+      toast('Deslize');
+    }
+  });
+
   $('pause').onclick = function () { setPaused(!paused); };
   $('save').onclick = function () {
     if (!lastBlob) return toast('Ainda não há quadro');
@@ -174,6 +253,21 @@
     toast('Quadro salvo');
   };
   document.addEventListener('keydown', function (ev) {
+    // Com controle ligado o teclado é do celular (inclusive o espaço); letras se juntam em um texto só.
+    if (control && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
+      if (KEYMAP[ev.key]) {
+        ev.preventDefault();
+        flushTyped();
+        return sendInput({ action: 'key', key: KEYMAP[ev.key] });
+      }
+      if (ev.key.length === 1) {
+        ev.preventDefault();
+        typed += ev.key;
+        clearTimeout(typeTimer);
+        typeTimer = setTimeout(flushTyped, 250);
+        return;
+      }
+    }
     if (ev.key === ' ') { ev.preventDefault(); setPaused(!paused); }
   });
   // Janela minimizada ou em outra aba: para de capturar e poupa a CPU do celular.

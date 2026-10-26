@@ -122,6 +122,14 @@ function evalResult(r, { max = 20000 } = {}) {
   return `${body}\n\n(${info.join(' · ')})`;
 }
 
+function inputResult(r) {
+  if (r.action === 'tap') return `Toque em (${r.x}, ${r.y}). Confira com app_screenshot.`;
+  if (r.action === 'swipe') return `Arrasto de (${r.x1}, ${r.y1}) até (${r.x2}, ${r.y2}).`;
+  if (r.action === 'key') return `Tecla ${r.key} enviada.`;
+  if (r.via === 'dom') return `Texto inserido no campo ${r.field} pelo app (${r.length} caractere(s))${r.value !== undefined ? `; valor agora: ${JSON.stringify(r.value)}` : ''}.`;
+  return `Texto digitado por adb (${r.length} caractere(s)).`;
+}
+
 function kb(n) {
   return `${(n / 1024).toFixed(0)} KB`;
 }
@@ -163,4 +171,4 @@ function navigateResult(r) {
   return out.join('\n');
 }
 
-module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList };
+module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult };
