@@ -197,7 +197,7 @@ O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `
 - **Mudanças nativas:** plugin, `config.xml`, ícone e permissões exigem `devbridge build` de novo.
 - **Origem diferente:** no modo dev a origem é `http://localhost:8100`, e não `file://`. Por isso `localStorage` e IndexedDB ficam separados do build normal. SQLite, NativeStorage e arquivos não mudam, porque são nativos.
 - **Depende do cabo:** sem o cabo e sem o `devbridge start`, o APK dev não carrega (`devbridge launch` reabre o app depois que o servidor voltar). Para testar desconectado, gere um build normal (`cordova run android`).
-- **iOS:** fora do escopo por enquanto.
+- **iOS:** não suportado; a ferramenta é só para Android.
 
 ## Testes
 
