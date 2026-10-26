@@ -8,8 +8,9 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult } = require('../src/format');
 const { startMcp } = require('../src/mcp');
+const { splitSql } = require('../src/sqlguard');
 const adb = require('../src/adb');
 
 const HELP = `cordova-devbridge — live reload e SQLite do app Cordova no celular (USB/adb)
@@ -31,6 +32,8 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   network <ID> [--json]      cabeçalhos e corpos de uma requisição
   sql "<SQL>" [--db X] [--params '[..]'] [--write] [--json] [--max N]
                              executa SQL no app rodando (leitura por padrão)
+  sql --file script.sql [--db X] [--write] [--json]
+                             várias instruções numa transação só
   go <ROTA>                  leva o app à rota (ex.: /pedidos/12) e mostra onde ele parou
   eval "<JS>" [--timeout ms] [--json]
                              avalia JavaScript no app
@@ -43,7 +46,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -144,6 +147,12 @@ async function cmdNetwork(api, args) {
 }
 
 async function cmdSql(api, args) {
+  if (args.flags.file) {
+    const statements = splitSql(fs.readFileSync(path.resolve(args.flags.file), 'utf8'));
+    if (!statements.length) throw new Error(`${args.flags.file} não tem instruções SQL.`);
+    const r = await api.sql({ statements, db: args.flags.db, write: !!args.flags.write, maxRows: Number(args.flags.max || 1000) });
+    return console.log(args.flags.json ? JSON.stringify(r, null, 2) : sqlBatchResult(r, statements));
+  }
   const sql = args._.slice(1).join(' ');
   if (!sql) throw new Error('Informe o SQL: devbridge sql "select ..."');
   let params = [];

@@ -28,6 +28,17 @@ function sqlResult(result) {
   return out.join('\n');
 }
 
+// Lote: um bloco por instrução, na ordem enviada.
+function sqlBatchResult(result, statements) {
+  const blocks = result.results.map((r, i) => {
+    const sql = statements && statements[i] ? (typeof statements[i] === 'string' ? statements[i] : statements[i].sql) : '';
+    const head = `-- [${i + 1}] ${sql.replace(/\s+/g, ' ').trim().slice(0, 100)}`;
+    return `${head}\n${sqlResult(r)}`;
+  });
+  blocks.push(`(${result.results.length} instrução(ões) numa transação · banco: ${result.database} · ${result.ms} ms)`);
+  return blocks.join('\n\n');
+}
+
 function logLine(e) {
   const t = new Date(e.ts).toTimeString().slice(0, 8);
   return `${t} ${e.level.toUpperCase().padEnd(5)} ${e.msg}`;
@@ -118,4 +129,4 @@ function navigateResult(r) {
   return out.join('\n');
 }
 
-module.exports = { table, sqlResult, logLine, networkLine, networkDetail, evalResult, navigateResult };
+module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult };

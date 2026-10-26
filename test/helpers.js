@@ -54,11 +54,14 @@ function fakeSqlitePlugin(data) {
       row[m[2]] = params[0];
       return { rows: [], rowsAffected: 1 };
     }
-    m = s.match(/^insert\s+into\s+"?(\w+)"?\s+(?:default\s+values|\(([^)]*)\)\s+values)/i);
+    m = s.match(/^insert\s+into\s+"?(\w+)"?\s+(?:default\s+values|\(([^)]*)\)\s+values\s*\((.*)\))/i);
     if (m) {
       const cols = m[2] ? m[2].split(',').map((c) => c.trim().replace(/"/g, '')) : [];
+      // values com "?" usa params; com literais (script de --file), lê números e strings.
+      const literals = (m[3] || '').match(/'(?:[^']|'')*'|[^,\s]+/g) || [];
+      const values = literals.map((v, i) => (v === '?' ? params[i] : v[0] === "'" ? v.slice(1, -1).replace(/''/g, "'") : Number(v)));
       const row = {};
-      cols.forEach((c, i) => (row[c] = params[i]));
+      cols.forEach((c, i) => (row[c] = values[i]));
       tables[m[1]].push(row);
       return { rows: [], rowsAffected: 1 };
     }
@@ -84,6 +87,8 @@ function fakeSqlitePlugin(data) {
     function tx(readOnly) {
       return (fn, error, success) => {
         setTimeout(() => {
+          // Falha desfaz a transação inteira, como no plugin real.
+          const before = structuredClone(data[name] || {});
           let failed = null;
           fn({
             executeSql(sql, params, ok, err) {
@@ -95,8 +100,10 @@ function fakeSqlitePlugin(data) {
               }
             },
           });
-          if (failed) error({ message: failed.message });
-          else success();
+          if (failed) {
+            data[name] = before;
+            error({ message: failed.message });
+          } else success();
         }, 1);
       };
     }

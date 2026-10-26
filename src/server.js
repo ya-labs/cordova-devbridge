@@ -188,19 +188,37 @@ class DevServer {
     return { apps: this.broadcast('reload', { files: [] }) };
   }
 
-  async sql({ sql, params = [], db, write = false, maxRows = 1000 }) {
-    const problem = checkSql(sql, { write });
-    if (problem) throw new Error(problem);
+  // statements: lote [{ sql, params }] numa transação só; cada instrução passa pelo guard.
+  async sql({ sql, params = [], statements, db, write = false, maxRows = 1000 }) {
+    let list = null;
+    if (statements !== undefined) {
+      if (!Array.isArray(statements) || !statements.length) throw new Error('"statements" precisa ser uma lista com ao menos uma instrução.');
+      list = statements.map((s) => (typeof s === 'string' ? { sql: s, params: [] } : { sql: s && s.sql, params: (s && s.params) || [] }));
+      list.forEach((s, i) => {
+        const problem = checkSql(s.sql, { write });
+        if (problem) throw new Error(`Instrução ${i + 1} de ${list.length}: ${problem}`);
+      });
+    } else {
+      const problem = checkSql(sql, { write });
+      if (problem) throw new Error(problem);
+    }
     const spec = resolveDatabase(this.config, db);
-    const payload = { sql, params, write, maxRows, db: { global: spec.global, name: spec.name } };
+    const target = { global: spec.global, name: spec.name };
+    const payload = list ? { statements: list, write, maxRows, db: target } : { sql, params, write, maxRows, db: target };
+    // O lote entra no histórico como uma linha só.
+    const logSql = list ? `[lote ${list.length}] ${list.map((s) => s.sql.replace(/;\s*$/, '')).join('; ')}` : sql;
+    const logParams = list ? list.map((s) => s.params) : params;
     let result;
     try {
       result = await this.sendSql(payload, spec);
     } catch (err) {
-      if (write) await this.history(spec.alias, sql, params, `ERRO ${err.message}`);
+      if (write) await this.history(spec.alias, logSql, logParams, `ERRO ${err.message}`);
       throw err;
     }
-    if (write) await this.history(spec.alias, sql, params, `ok rowsAffected=${result.rowsAffected}`);
+    if (write) {
+      const affected = list ? result.results.map((r) => r.rowsAffected).join(',') : result.rowsAffected;
+      await this.history(spec.alias, logSql, logParams, `ok rowsAffected=${affected}`);
+    }
     return result;
   }
 
