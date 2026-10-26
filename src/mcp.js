@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList } = require('./format');
+const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -98,6 +98,34 @@ function buildTools(config) {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'app_tap',
+      description: 'Toca na tela do celular (adb input tap). x/y em pixels da imagem do app_screenshot. Funciona também em diálogos nativos, câmera e teclado. Depois, confira com app_screenshot.',
+      inputSchema: { type: 'object', properties: { x: { type: 'number' }, y: { type: 'number' } }, required: ['x', 'y'] },
+    },
+    {
+      name: 'app_swipe',
+      description: 'Arrasta na tela (rolar lista, puxar para atualizar), em pixels da imagem do app_screenshot.',
+      inputSchema: {
+        type: 'object',
+        properties: { x1: { type: 'number' }, y1: { type: 'number' }, x2: { type: 'number' }, y2: { type: 'number' }, durationMs: { type: 'number', description: 'Padrão 300.' } },
+        required: ['x1', 'y1', 'x2', 'y2'],
+      },
+    },
+    {
+      name: 'app_type',
+      description: 'Digita no campo com foco (toque nele antes com app_tap). ASCII vai por adb input text; texto com acento ou quebra de linha vai pelo app (insere no campo focado do WebView e dispara input/change para o ng-model).',
+      inputSchema: {
+        type: 'object',
+        properties: { text: { type: 'string' }, via: { type: 'string', enum: ['auto', 'adb', 'dom'], description: 'Padrão auto.' } },
+        required: ['text'],
+      },
+    },
+    {
+      name: 'app_key',
+      description: 'Envia uma tecla: back (volta/fecha diálogo), enter, del, tab, home, escape, menu, up/down/left/right, um número ou KEYCODE_*.',
+      inputSchema: { type: 'object', properties: { key: { type: 'string' } }, required: ['key'] },
+    },
+    {
       name: 'db_snapshot',
       description: 'Salva o estado dos bancos SQLite do app no PC (.devbridge/snapshots/<name>), para repetir um teste a partir do mesmo ponto. Fecha o app durante a cópia e o reabre. Sem "db", copia todos os bancos do app.',
       inputSchema: {
@@ -189,6 +217,14 @@ async function callTool(api, name, args) {
       const r = await api.sql({ sql: args.sql, params: args.params, statements: args.statements, db: args.db, maxRows: args.maxRows || 200 });
       return text(r.results ? sqlBatchResult(r, args.statements) : sqlResult(r));
     }
+    case 'app_tap':
+      return text(inputResult(await api.input({ action: 'tap', x: args.x, y: args.y })));
+    case 'app_swipe':
+      return text(inputResult(await api.input({ action: 'swipe', x1: args.x1, y1: args.y1, x2: args.x2, y2: args.y2, durationMs: args.durationMs })));
+    case 'app_type':
+      return text(inputResult(await api.input({ action: 'text', text: args.text, via: args.via })));
+    case 'app_key':
+      return text(inputResult(await api.input({ action: 'key', key: args.key })));
     case 'db_snapshot':
       return text(snapshotResult(await api.snapshot({ name: args.name, db: args.db })));
     case 'db_restore':

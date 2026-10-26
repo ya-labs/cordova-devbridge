@@ -12,6 +12,7 @@ const { resolveDatabase, globToRegExp } = require('./config');
 const adb = require('./adb');
 const { Mirror } = require('./mirror');
 const { createSnapshot, restoreSnapshot, listSnapshots } = require('./snapshot');
+const { tapArgs, swipeArgs, textArgs, keyArgs, isPlainText } = require('./input');
 const { NetworkLog } = require('./network');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
@@ -25,13 +26,14 @@ function isDesktopBrowser(ua) {
 }
 
 class DevServer {
-  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {}, snapshotDeps = {} } = {}) {
+  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {}, snapshotDeps = {}, adbRun = adb.run } = {}) {
     this.config = config;
     this.screencap = screencap;
     this.mirror = new Mirror({ capture: () => this.screencap(), ...mirror });
     this.logger = logger;
     this.watchEnabled = watch;
     this.listDatabases = listDatabases;
+    this.adbRun = adbRun;
     // O servidor está no ar, então reabrir o app é só lançá-lo: ele reconecta sozinho.
     this.snapshotDeps = {
       listDatabases,
@@ -252,6 +254,33 @@ class DevServer {
     await fsp.appendFile(path.join(this.config.stateDir, 'sql-history.log'), line + '\n');
   }
 
+  // Toque, arrasto e teclas vão por adb; texto vai por adb se for ASCII, senão
+  // pelo client (campo focado do WebView), que digita acento e quebra de linha.
+  async input({ action, x, y, x1, y1, x2, y2, durationMs, text, via = 'auto', key } = {}) {
+    switch (action) {
+      case 'tap':
+        await this.adbRun(tapArgs(x, y));
+        return { action, x, y };
+      case 'swipe':
+        await this.adbRun(swipeArgs(x1, y1, x2, y2, durationMs));
+        return { action, x1, y1, x2, y2 };
+      case 'key':
+        await this.adbRun(keyArgs(key));
+        return { action, key };
+      case 'text': {
+        if (typeof text !== 'string' || !text) throw new Error('Informe o texto.');
+        if (!['auto', 'adb', 'dom'].includes(via)) throw new Error('via inválido: use auto, adb ou dom.');
+        if (via === 'dom' || (via === 'auto' && !isPlainText(text))) {
+          return { action, via: 'dom', ...(await this.request('type', { text }, 5000)) };
+        }
+        await this.adbRun(textArgs(text));
+        return { action, via: 'adb', length: text.length };
+      }
+      default:
+        throw new Error('Ação inválida: use tap, swipe, text ou key.');
+    }
+  }
+
   snapshot(opts) { return createSnapshot(this.config, opts, this.snapshotDeps); }
   restore(opts) { return restoreSnapshot(this.config, opts, this.snapshotDeps); }
   snapshots() { return listSnapshots(this.config); }
@@ -400,6 +429,8 @@ class DevServer {
           return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
+        case 'POST /input':
+          return this.json(res, 200, await this.input(await readJson(req)));
         case 'GET /snapshots':
           return this.json(res, 200, this.snapshots());
         case 'POST /snapshot':

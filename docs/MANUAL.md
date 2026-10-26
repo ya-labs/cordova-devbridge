@@ -193,7 +193,7 @@ Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que
 
 ## 7. MCP para agentes de IA
 
-O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `db_snapshot`, `db_restore`, `db_snapshots`, `app_storage`, `app_navigate`, `app_eval` e `db_exec`. `db_query` e `db_exec` aceitam um lote em `statements` (numa transação só), útil para o agente montar massa de teste numa chamada. Ele conversa com o `dvb start`, que precisa estar rodando.
+O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_tap`, `app_swipe`, `app_type`, `app_key`, `db_snapshot`, `db_restore`, `db_snapshots`, `app_storage`, `app_navigate`, `app_eval` e `db_exec`. `db_query` e `db_exec` aceitam um lote em `statements` (numa transação só), útil para o agente montar massa de teste numa chamada. Ele conversa com o `dvb start`, que precisa estar rodando.
 
 Registro, na raiz do app:
 
@@ -229,6 +229,7 @@ Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `l
 | Uma requisição não aparece na aba Rede | é ao próprio servidor e deu certo (escondida por padrão), ou sai por um plugin nativo que não é o `cordova-plugin-advanced-http` (WebSocket, outro plugin HTTP) | ligue "Locais" (`--local`, `local: true` no MCP); requisições de outros plugins nativos não passam pelo WebView e não são capturadas |
 | `dvb eval`/`app_eval` responde `EvalError: Refused to evaluate a string` | o `Content-Security-Policy` do `index.html` não tem `'unsafe-eval'` | acrescente `'unsafe-eval'` ao `default-src` (ou `script-src`) só se o time aceitar; sem isso, o eval não funciona nesse app |
 | `db-restore`/`db_restore` falha com `exec-in` ou tamanho diferente | adb antigo sem `exec-in`, ou o aparelho não terminou de gravar em 20 s | atualize o platform-tools; o app fica parado: rode o restore de novo ou `dvb launch` |
+| `type`/`app_type` com acento responde "Nenhum campo de texto com foco" | o texto com acento vai pelo app, no campo que tem o foco no WebView | toque no campo antes (`dvb tap`/`app_tap`); campo nativo (fora do WebView) só recebe ASCII, pelo adb |
 | Mudança de CSS não aparece | o arquivo não está ligado por `<link>` no `index.html` | o devbridge recarrega a página nesse caso; confira `dvb logs` |
 | `AVISO: AndroidManifest sem usesCleartextTraffic` no build | falta o plugin de cleartext | instale `cordova-plugin-enable-cleartext-traffic` e rode `dvb build` |
 | Mudou plugin nativo, `config.xml`, ícone ou permissão e nada mudou | essas coisas vivem no APK, não no `www/` | `dvb build` |
