@@ -1,12 +1,12 @@
 # cordova-devbridge: guia para agentes
 
-Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em Linux com o celular via USB/adb. Contexto pessoal (apps, pessoas, memória) fica no `CLAUDE.local.md`, fora do git. O uso está descrito no [README.md](README.md). Este arquivo registra as decisões e o que um agente precisa saber antes de mexer.
+Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em Linux com o celular via USB/adb. O uso está descrito no [README.md](README.md) e no [manual](docs/MANUAL.md). Este arquivo registra o que é estável: o mapa do código, as decisões, as convenções e as armadilhas. O andamento do projeto (o que foi feito, o que falta, validações) fica nas issues e nos PRs, nunca aqui.
 
 ## O que o projeto resolve
 
 1. **Build lento a cada alteração.** Um APK "dev" carrega `www/` do PC (`http://localhost:8100` via `adb reverse`). Salvar um arquivo recarrega o app; mudança só de CSS é trocada sem reload.
 2. **SQLite do app em tempo real** pela CLI, pelo console web (`/__devbridge/`) ou pelo MCP.
-3. **Ciclo do agente:** editar → `app_reload` → `app_logs` / `db_query` / `app_screenshot`.
+3. **Ciclo do agente pelo MCP:** editar → `app_reload` → `app_logs` / `app_network` / `db_query` / `app_eval` / `app_screenshot`, chegando às telas com `app_navigate` ou `app_tap`.
 
 ## Mapa do código
 
@@ -17,9 +17,11 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 | `src/server.js` | `DevServer`: HTTP estático, SSE para o app, API `/__devbridge/api/*`, watcher, histórico de SQL |
 | `src/static.js` | resolve arquivos (platform_www sobre www) e injeta o client |
 | `src/client/devbridge-client.js` | roda **dentro do app**: logs, reload, troca de CSS, executa SQL |
-| `src/sqlguard.js` | classifica o SQL como leitura ou escrita e exige uma instrução por chamada |
+| `src/sqlguard.js` | classifica o SQL como leitura ou escrita, exige uma instrução por chamada e divide scripts (`splitSql`) |
 | `src/devbuild.js` | prepare → patch do `config.xml` gerado → compile → `adb install` → `launchIfServerUp` (só reabre o app se o servidor responder) |
-| `src/adb.js` | reverse, `run-as`, screencap, install |
+| `src/adb.js` | reverse, `run-as` (ler, gravar e apagar arquivos do app), screencap, install, force-stop |
+| `src/snapshot.js` | snapshot e restore dos bancos do app, usado pela CLI e pelo servidor |
+| `src/input.js` | argumentos do `adb shell input` (tap, swipe, text, keyevent) |
 | `src/network.js` | inspetor de rede: buffer das requisições do app (eventos start/end), filtros e máscara de credenciais |
 | `src/mirror.js` | espelho da tela: capturas `screencap -p` em paralelo, só enquanto há quem peça quadros |
 | `src/ui/mirror.html` | janela do espelho (long-poll em `/api/mirror/frame`) |
@@ -38,7 +40,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Client na ignore list do DevTools.** O wrapper de `console.*` faria todo log apontar para a linha dele no `chrome://inspect`. O servidor acrescenta `//# sourceMappingURL=/__devbridge/client.js.map` ao `client.js` e gera um map de identidade com `x_google_ignoreList`. Com isso o DevTools pula os frames do client e linka a linha do app.
 - **Segurança do banco:**
   - a leitura é o padrão;
-  - a escrita exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox da UI). Não há trava na config: `allowWrites` foi removido a pedido da pessoa (#9), por ser ferramenta de desenvolvimento num aparelho de teste;
+  - a escrita exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox da UI). Não há trava na config, porque é ferramenta de desenvolvimento num aparelho de teste;
   - a leitura roda em `readTransaction`, então o próprio plugin recusa escrita;
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
@@ -52,12 +54,12 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
   - cada chamada gera `start` e `end`; o servidor dá um `seq` novo a cada mudança, então `since` traz também as que terminaram depois;
   - corpo cortado em 32 KB no app; 500 entradas no servidor; requisições locais que deram certo ficam fora da lista por padrão;
   - `networkMask` (padrão `true`) mascara credenciais por regex, e não por parse, porque o corpo pode chegar cortado.
-- **Eval no app (#9):** sempre disponível (o `allowEval` foi removido junto com o `allowWrites`, a pedido da pessoa). O client usa eval indireto `(0, eval)(expr)`, que roda no escopo global e fora do `'use strict'` do client. Resultado thenable é esperado até `timeoutMs` (100 ms a 120 s); o servidor espera 2 s a mais para o timeout do app chegar primeiro. O valor volta pela mesma cópia JSON dos logs (`cloneArg`); toda expressão vai para `.devbridge/eval-history.log`. Código síncrono não tem como ser interrompido: um laço infinito trava o app. A stack de erro é cortada no frame `at runEval`, porque o que vem abaixo é o canal do client. O console web tem um prompt no rodapé do painel de logs, que chama a mesma API; o resultado é uma linha local (não conta como log do app). Ele fica no painel que já existia, e não numa aba, para não depender das abas da #8.
-- **Navegação (#11):** `app_navigate`/`devbridge go` mudam o `location.hash` no app já iniciado (recusado antes do `deviceready`). Sem `#`, a rota usa o prefixo que o app já usa (`#!` ou `#`). A resposta espera o hash ficar parado por 300 ms (máximo 3 s), por polling e não por `hashchange`, para pegar o redirecionamento de uma guarda de login ou do `otherwise`; `redirected` diz se o app foi para outro lugar.
-- **Toque, texto e teclas (#12):** `src/input.js` monta os argumentos do `adb shell input` (coordenadas em pixels da captura, que seguem a rotação da tela). O `input text` só aceita ASCII e passa pelo shell do aparelho: metacaracteres levam barra e espaço vira `%s`. Texto com acento ou quebra de linha vai pelo client (`type`): insere no campo com foco do WebView e dispara `input`/`change` para o `ng-model`; valor de senha não volta. No espelho, o modo "Controlar" converte o clique para pixels do aparelho descontando as faixas do `object-fit: contain`, e as ações vão em fila para texto e teclas chegarem na ordem. Nos testes, o `adbRun` do servidor é injetável. Em validação headless, um `screencap` falso que resolve na hora trava o event loop (os workers do espelho giram em microtarefas): dê um atraso.
-- **Snapshot do banco (#10):** `src/snapshot.js`, usado pela CLI (direto, sem servidor) e pelo servidor (MCP). O app é parado (`am force-stop`) durante a cópia e a restauração e reaberto no fim (na CLI, só se o `start` estiver no ar). Sem `db`, copia todos os arquivos de `databases/`. A restauração troca o conjunto inteiro: journal/wal/shm que não estavam no snapshot são apagados antes, senão o SQLite aplicaria um WAL de outro estado. A escrita usa `adb exec-in run-as <pkg> sh -c 'cat > …'`, que **volta antes de o aparelho terminar de gravar** (medido: 250 a 500 ms com 0,3 a 5 MB); o `writeAppFile` só termina quando o `stat` bate com o tamanho. Snapshot de outro pacote é recusado; histórico em `.devbridge/snapshot-history.log`. `globToRegExp` mudou para o `config.js`.
-- **Storage (#13):** `app_storage`/`devbridge storage` em `local`, `session` e `native` (NativeStorage, assíncrono e com o valor já interpretado; JSON válido em `set` vira objeto). Sem chave lista com prévia de 120 caracteres; com chave devolve até 64 KB, mais a cópia JSON (`cloneArg`) se for objeto. `set`/`remove` exigem `action` explícita e vão para `.devbridge/storage-history.log`. Chaves `devbridge.*` (o `reloadRestore` grava `devbridge.reload` no `sessionStorage`) são recusadas em `set`/`remove`. Atenção nos testes: o client apaga `devbridge.reload` no boot. A aba do console é só leitura e não faz polling.
-- **SQL em lote (#14):** a API e o MCP recebem `statements: [{ sql, params }]` (lista explícita, sem dividir texto); a CLI divide o `--file` com `splitSql` (respeita string, identificador entre aspas, comentário e `CREATE TRIGGER … END`; tira comentários do início de cada instrução). Cada instrução passa pelo `sqlguard`; no client, os `executeSql` são encadeados na mesma transação e a primeira falha desfaz o lote, com o índice no erro. O lote vira uma linha só no `sql-history.log`. O `sqlitePlugin` falso desfaz a transação em caso de falha.
+- **Eval no app:** sempre disponível, sem opção na config. O client usa eval indireto `(0, eval)(expr)`, que roda no escopo global e fora do `'use strict'` do client. Resultado thenable é esperado até `timeoutMs` (100 ms a 120 s); o servidor espera 2 s a mais para o timeout do app chegar primeiro. O valor volta pela mesma cópia JSON dos logs (`cloneArg`); toda expressão vai para `.devbridge/eval-history.log`. Código síncrono não tem como ser interrompido: um laço infinito trava o app. A stack de erro é cortada no frame `at runEval`, porque o que vem abaixo é o canal do client. O console web tem um prompt no rodapé do painel de logs, que chama a mesma API; o resultado é uma linha local (não conta como log do app).
+- **Navegação:** `app_navigate`/`devbridge go` mudam o `location.hash` no app já iniciado (recusado antes do `deviceready`). Sem `#`, a rota usa o prefixo que o app já usa (`#!` ou `#`). A resposta espera o hash ficar parado por 300 ms (máximo 3 s), por polling e não por `hashchange`, para pegar o redirecionamento de uma guarda de login ou do `otherwise`; `redirected` diz se o app foi para outro lugar.
+- **Toque, texto e teclas:** `src/input.js` monta os argumentos do `adb shell input` (coordenadas em pixels da captura, que seguem a rotação da tela). O `input text` só aceita ASCII e passa pelo shell do aparelho: metacaracteres levam barra e espaço vira `%s`. Texto com acento ou quebra de linha vai pelo client (`type`): insere no campo com foco do WebView e dispara `input`/`change` para o `ng-model`; valor de senha não volta. No espelho, o modo "Controlar" converte o clique para pixels do aparelho descontando as faixas do `object-fit: contain`, e as ações vão em fila para texto e teclas chegarem na ordem. Nos testes, o `adbRun` do servidor é injetável.
+- **Snapshot do banco:** `src/snapshot.js`, usado pela CLI (direto, sem servidor) e pelo servidor (MCP). O app é parado (`am force-stop`) durante a cópia e a restauração e reaberto no fim (na CLI, só se o `start` estiver no ar). Sem `db`, copia todos os arquivos de `databases/`. A restauração troca o conjunto inteiro: journal/wal/shm que não estavam no snapshot são apagados antes, senão o SQLite aplicaria um WAL de outro estado. A escrita usa `adb exec-in run-as <pkg> sh -c 'cat > …'`, que **volta antes de o aparelho terminar de gravar** (medido: 250 a 500 ms com 0,3 a 5 MB); o `writeAppFile` só termina quando o `stat` bate com o tamanho. Snapshot de outro pacote é recusado; histórico em `.devbridge/snapshot-history.log`.
+- **Storage:** `app_storage`/`devbridge storage` em `local`, `session` e `native` (NativeStorage, assíncrono e com o valor já interpretado; JSON válido em `set` vira objeto). Sem chave lista com prévia de 120 caracteres; com chave devolve até 64 KB, mais a cópia JSON (`cloneArg`) se for objeto. `set`/`remove` exigem `action` explícita e vão para `.devbridge/storage-history.log`. Chaves `devbridge.*` (o `reloadRestore` grava `devbridge.reload` no `sessionStorage`) são recusadas em `set`/`remove`. A aba do console é só leitura e não faz polling.
+- **SQL em lote:** a API e o MCP recebem `statements: [{ sql, params }]` (lista explícita, sem dividir texto); a CLI divide o `--file` com `splitSql` (respeita string, identificador entre aspas, comentário e `CREATE TRIGGER … END`; tira comentários do início de cada instrução). Cada instrução passa pelo `sqlguard`; no client, os `executeSql` são encadeados na mesma transação e a primeira falha desfaz o lote, com o índice no erro. O lote vira uma linha só no `sql-history.log`. O `sqlitePlugin` falso desfaz a transação em caso de falha.
 - **Espelho da tela sem dependência:** sem scrcpy/ffmpeg, o espelho é feito com `adb exec-out screencap -p` (~0,6 s por quadro no aparelho). Três capturas em paralelo dão ~4,7 qps (medido; 4 dão ~5,4, mas pesam mais no app em teste). Capturas terminam fora de ordem, então só se publica quadro de captura iniciada depois da que gerou o último (contador, não relógio). A janela pede por long-poll na API (com `X-Devbridge`); sem pedidos por 4 s os workers param, e a janela para de pedir quando fica oculta.
 - **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
 - **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
@@ -67,7 +69,10 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 - Mensagens, comentários e documentação em **português**. O código segue o estilo existente: CommonJS, `'use strict'` e poucos comentários, que explicam o porquê.
 - Commits: `tipo: descrição curta` (padrão YABook).
-- Testes: `npm test`, que roda `node --test test/*.test.js`. Toda mudança de comportamento ganha um teste. O `test/helpers.js` tem o app falso, o `sqlitePlugin` falso e o client em vm.
+- Testes: `npm test`, que roda `node --test test/*.test.js`. Toda mudança de comportamento ganha um teste. O `test/helpers.js` tem o app falso, o `sqlitePlugin` falso (com rollback), o storage falso e o client em vm.
+- A UI não tem teste automatizado de clique: telas novas se conferem num Chrome headless via CDP, contra o app falso do `test/helpers.js`.
+- Andamento, pendências e validações ficam nas issues e nos PRs. Não acrescente a este arquivo seções de estado, pendências, roteiros ou ideias futuras.
+- **Critério das features:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral não ganha opção na config: exige pedido explícito por chamada e fica em histórico em `.devbridge/`.
 
 ## Armadilhas já encontradas
 
@@ -75,82 +80,19 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **`pkill -f <padrão>`** com um padrão que aparece na linha do próprio shell mata o comando (exit 144). Mate pelo PID.
 - **`$!` de `cd dir && node ... &`** é o PID do subshell, e matar esse PID pode deixar o node vivo. Rode o node direto em background.
 - **Chrome headless via CDP:** no Node 20 é preciso `node --experimental-websocket`.
-- **APK dev aberto sem servidor:** o WebView mostra uma página de erro de conexão que não tenta de novo. A ordem certa é `start` → `build`. Se o app ficar preso nessa tela, rode `devbridge launch` com o servidor no ar. Corrigido na issue #1.
+- **APK dev aberto sem servidor:** o WebView mostra uma página de erro de conexão que não tenta de novo. A ordem certa é `start` → `build`. Se o app ficar preso nessa tela, rode `devbridge launch` com o servidor no ar; o `build` só reabre o app se o `start` responder.
+- **Testes no vm:** objetos criados dentro do vm têm outro `Object.prototype`, e o `deepStrictEqual` falha; compare por JSON. O client apaga `devbridge.reload` do `sessionStorage` no boot, então grave essa chave depois de subir o client.
+- **Chrome headless com captura falsa:** um `screencap` falso que resolve na hora faz os workers do espelho girarem em microtarefas e trava o event loop; dê um atraso.
+- **`adb exec-in`** volta antes de o aparelho terminar de gravar (250 a 500 ms com 0,3 a 5 MB): confira o tamanho com `stat` antes de seguir.
 - **Hook YABook:** a `main` é protegida, então edições vão por branch de issue. O hook também barra `git merge`, inclusive `--ff-only`, sem pedido explícito; para avançar uma branch local atrás da remota, use `git pull --ff-only`.
 
-## Estado (2026-10-26)
+## Regras e fatos do ambiente
 
-**Feito:**
-- Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
-- `npm test`: 61/61.
-- Backlog #8 a #14 entregue (PRs #15 a #21): inspetor de rede, eval no app (MCP, CLI e console web, sem trava na config), navegação por rota, SQL em lote, storage (local/session/native), snapshot e restore do banco, e toque/texto/teclas (MCP, CLI e espelho). Validado com testes e Chrome headless via CDP, e no aparelho pela pessoa (2026-10-26): rede com login e sincronização reais, eval, navegação, SQL em lote com rollback, storage, ciclo snapshot → escrita → restore e toque/texto/teclas, pelo MCP e pelo espelho.
-- Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
-- `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
-- No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
-- No aparelho (Android 15), pelo pacote #4:
-  - `build` instalando por cima do APK debug existente, sem desinstalar (24 s);
-  - o app conecta sozinho;
-  - logs do boot;
-  - SQL no banco global aberto e no banco por arquivo;
-  - `pull-db`, `screenshot` e `launch`;
-  - troca de CSS sem reload e reload de JS.
-  - `reloadKeepRoute: false` (#3): o reload volta sem hash e o boot passa pela rota inicial, sem erro.
-  - depois do login: `tables`, `sql` e `schema` pela conexão global e `pull-db` do banco com `*` (copia todos os arquivos que casam);
-  - câmera e foto do checklist com a origem `http://localhost`: fotos gravadas no SQLite, nenhum erro nos logs.
-
-**Pendente (não declarar como validado):**
-- Escolha de foto pela galeria (confirmar com a pessoa se foi testada).
-- Console web contra o app no aparelho.
-- MCP registrado num Claude Code de verdade.
-- Um segundo app real, com um banco só.
-
-## Situação atual
-
-Confira com `git log` e `gh issue list` antes de confiar nesta seção.
-
-- O remoto é `ya-labs/cordova-devbridge`, um repo **público**. Não registre aqui nem em issues e PRs: branches, commits ou PRs dos apps que usam a ferramenta; serial de aparelho; dados de banco; nome de cliente. Esse contexto vem da pessoa, na conversa.
-- Issue pacote #4 ("Validação do devbridge em app real no aparelho"), branch `4-validacao-app-real`:
-  - reúne as correções que a validação revelar, cada uma num commit documentado;
-  - o PR sai com merge commit;
-  - entregas:
-    - #3 (`reloadKeepRoute`);
-    - a preferência pelo client com `deviceready` (uma aba do PC roubava o client ativo);
-    - o redirecionamento do navegador do PC para o console;
-    - incluir e excluir registros na grade do console (pedido da pessoa durante a validação);
-    - `reloadRestore` e a camada "Recarregando…" (pedido da pessoa: o reload de JS não pode voltar ao login). Validado no aparelho pela pessoa;
-    - `docs/MANUAL.md` com instalação, configuração de app novo, `reloadRestore`, MCP e solução de problemas;
-    - console redesenhado, com objetos expansíveis nos logs;
-    - tela do celular ao vivo numa janela separada (botão "Tela"). Validado no aparelho: 4,7 qps, workers param sem espectador.
-- A UI não tem teste automatizado de clique. A inclusão e a exclusão foram conferidas num Chrome headless via CDP, contra o app falso do `test/helpers.js`. Os testes de API cobrem as instruções que a grade envia.
-- Issue #1 (PR #2, mergeado). A entrega dela:
-  - o `build` só reabre o app se o `start` responder (`launchIfServerUp`/`serverUp`);
-  - o comando `devbridge launch` (`adb.restart`: force-stop + abrir);
-  - o README com a ordem `start` → `build`.
+- O remoto é `ya-labs/cordova-devbridge`, um repo **público**. Não registre aqui nem em issues e PRs: branches, commits ou PRs dos apps que usam a ferramenta; serial de aparelho; dados de banco; nome de cliente.
 - A config de cada app (`devbridge.config.json`) mora no repositório do próprio app, não aqui.
 - No modo dev, a origem passa a ser `http://localhost:8100`, então o `localStorage` fica separado do build normal. SQLite, NativeStorage e arquivos continuam os mesmos. Confira o que o app guarda no `localStorage` antes de afirmar que é preciso logar de novo.
 - `INSTALL_FAILED_UPDATE_INCOMPATIBLE` no `build` significa que o app instalado tem outra assinatura (por exemplo, um build release). A saída é desinstalar, o que apaga o banco local do app; sincronizar antes.
 
-**Roteiro de validação no aparelho**
-1. Terminal 1, na raiz do app: `devbridge start`.
-2. Terminal 2: `devbridge build`.
-3. Testar:
-   - live reload (js e css);
-   - `logs -f`;
-   - `sql` antes e depois do login;
-   - `tables`;
-   - fluxos com plugins nativos (câmera, galeria);
-   - `pull-db`;
-   - console web;
-   - `screenshot`;
-   - `launch`;
-   - MCP.
-
-Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste em branch de issue e atualize esta seção.
-
-**Critério das features novas:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral não ganha opção na config (as travas `allowWrites`/`allowEval` foram removidas na #9): exige pedido explícito por chamada e fica em histórico em `.devbridge/`. Backlog nesse critério: #8 a #14, entregue e validado no aparelho em 2026-10-26.
-
-**Ideias registradas, fora do escopo atual:** suporte a iOS, Wi-Fi como alternativa ao `adb reverse` e teste automatizado de clique na UI.
-
 ## Memória
 
-Os registros de memória (escopo, ids) ficam no `CLAUDE.local.md`. Aprendizados técnicos desta ferramenta não levam nome de app, cliente ou pessoa.
+Aprendizados técnicos desta ferramenta não levam nome de app, cliente ou pessoa.
