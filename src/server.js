@@ -245,6 +245,32 @@ class DevServer {
     await fsp.appendFile(path.join(this.config.stateDir, 'sql-history.log'), line + '\n');
   }
 
+  // Ação padrão: get com chave, list sem. set/remove ficam no histórico.
+  async storage({ area, action, key, value } = {}) {
+    if (!['local', 'session', 'native'].includes(area)) throw new Error('Área inválida: use local, session ou native.');
+    const act = action || (key ? 'get' : 'list');
+    if (!['list', 'get', 'set', 'remove'].includes(act)) throw new Error(`Ação inválida: ${act}. Use list, get, set ou remove.`);
+    if (act !== 'list' && (typeof key !== 'string' || !key)) throw new Error('Informe a chave.');
+    if (act === 'set' && typeof value !== 'string') throw new Error('Informe o valor como texto (no native, um JSON válido é gravado como objeto).');
+    const write = act === 'set' || act === 'remove';
+    let result;
+    try {
+      result = await this.request('storage', { area, action: act, key, value }, 10000);
+    } catch (err) {
+      if (write) await this.storageHistory(area, act, key, value, `ERRO ${err.message}`);
+      throw err;
+    }
+    if (write) await this.storageHistory(area, act, key, value, 'ok');
+    return result;
+  }
+
+  async storageHistory(area, action, key, value, outcome) {
+    await fsp.mkdir(this.config.stateDir, { recursive: true });
+    const shown = value === undefined ? '' : String(value).replace(/\s+/g, ' ').slice(0, 200);
+    const line = [new Date().toISOString(), area, action, key, shown, outcome].join('\t');
+    await fsp.appendFile(path.join(this.config.stateDir, 'storage-history.log'), line + '\n');
+  }
+
   navigate({ route } = {}) {
     if (typeof route !== 'string' || !route.trim()) return Promise.reject(new Error('Informe a rota, ex.: #/pedidos ou /pedidos.'));
     return this.request('navigate', { route }, 8000);
@@ -363,6 +389,8 @@ class DevServer {
           return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
+        case 'POST /storage':
+          return this.json(res, 200, await this.storage(await readJson(req)));
         case 'POST /navigate':
           return this.json(res, 200, await this.navigate(await readJson(req)));
         case 'POST /eval':

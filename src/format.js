@@ -122,6 +122,21 @@ function evalResult(r, { max = 20000 } = {}) {
   return `${body}\n\n(${info.join(' · ')})`;
 }
 
+function storageResult(r) {
+  if (r.items) {
+    if (!r.items.length) return `(${r.area}: vazio)`;
+    const lines = r.items.map((i) => `${i.key}${i.internal ? ' [devbridge]' : ''} (${i.size}) ${i.preview.replace(/\s+/g, ' ')}`);
+    return `${lines.join('\n')}\n\n(${r.area}: ${r.items.length} chave(s))`;
+  }
+  if (r.action === 'set') return `Gravado em ${r.area}: ${r.key} (${r.size} caracteres)`;
+  if (r.action === 'remove') return r.removed ? `Removido de ${r.area}: ${r.key}` : `${r.key} não existia em ${r.area}`;
+  const body = r.json !== undefined ? JSON.stringify(plain(r.json), null, 2) : r.value;
+  const notes = [`${r.area}`, `${r.size} caracteres`];
+  if (r.truncated) notes.push(`mostrando ${r.value.length}`);
+  if (r.internal) notes.push('chave do devbridge');
+  return `${body}\n\n(${r.key} · ${notes.join(' · ')})`;
+}
+
 function navigateResult(r) {
   const out = [`Rota atual: ${r.hash || '(sem hash)'}`];
   if (r.redirected) out.push(`O app redirecionou: o pedido foi ${r.requested}.`);
@@ -129,4 +144,4 @@ function navigateResult(r) {
   return out.join('\n');
 }
 
-module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult };
+module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult };
