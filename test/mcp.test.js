@@ -12,7 +12,7 @@ const { DevServer } = require('../src/server');
 const { makeApp, fakeSqlitePlugin, runClient, until } = require('./helpers');
 
 test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async () => {
-  const root = makeApp({ allowWrites: false });
+  const root = makeApp();
   const server = new DevServer(loadConfig({ cwd: root }), { logger: { log() {} } });
   await server.listen();
   // O processo MCP lê a porta da config: grava a porta real escolhida pelo SO.
@@ -44,7 +44,8 @@ test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async
     const list = await rpc('tools/list', {});
     const names = list.result.tools.map((t) => t.name);
     assert.ok(names.includes('db_query'));
-    assert.ok(!names.includes('db_exec'), 'db_exec só aparece com allowWrites');
+    assert.ok(names.includes('db_exec'), 'db_exec sempre disponível');
+    assert.ok(names.includes('app_eval'), 'app_eval sempre disponível');
 
     const q = await rpc('tools/call', { name: 'db_query', arguments: { sql: 'select * from CLIENTES', db: 'user' } });
     assert.match(q.result.content[0].text, /CODIGO │ NOME/);
@@ -54,7 +55,11 @@ test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async
     assert.equal(bad.result.isError, true);
     assert.match(bad.result.content[0].text, /recusada/);
 
-    const unknown = await rpc('tools/call', { name: 'db_exec', arguments: { sql: 'delete from CLIENTES' } });
+    const exec = await rpc('tools/call', { name: 'db_exec', arguments: { sql: 'delete from CLIENTES', db: 'user' } });
+    assert.match(exec.result.content[0].text, /afetadas: 1/);
+    assert.ok(fs.readFileSync(path.join(root, '.devbridge/sql-history.log'), 'utf8').includes('delete from CLIENTES'));
+
+    const unknown = await rpc('tools/call', { name: 'nao_existe', arguments: {} });
     assert.equal(unknown.error.code, -32602);
 
     const reload = await rpc('tools/call', { name: 'app_reload', arguments: {} });

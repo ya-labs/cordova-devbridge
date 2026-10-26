@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, logLine, table, networkLine, networkDetail } = require('../src/format');
+const { sqlResult, logLine, table, networkLine, networkDetail, evalResult } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const adb = require('../src/adb');
 
@@ -31,6 +31,8 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   network <ID> [--json]      cabeçalhos e corpos de uma requisição
   sql "<SQL>" [--db X] [--params '[..]'] [--write] [--json] [--max N]
                              executa SQL no app rodando (leitura por padrão)
+  eval "<JS>" [--timeout ms] [--json]
+                             avalia JavaScript no app
   tables [--db X]            lista tabelas
   schema <TABELA> [--db X]   colunas e índices
   pull-db [--db X] [--out DIR]
@@ -40,7 +42,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -62,7 +64,7 @@ async function cmdInit() {
   const xml = fs.existsSync('config.xml') ? fs.readFileSync('config.xml', 'utf8') : '';
   const id = (xml.match(/<widget[^>]*\sid="([^"]+)"/) || [])[1];
   if (!id) throw new Error('config.xml com <widget id> não encontrado. Rode na raiz do app Cordova.');
-  const config = { package: id, port: 8100, allowWrites: false, databases: { main: { global: 'db', name: 'App.db' } } };
+  const config = { package: id, port: 8100, databases: { main: { global: 'db', name: 'App.db' } } };
   fs.writeFileSync(target, JSON.stringify(config, null, 2) + '\n');
   console.log(`Criado ${CONFIG_NAME} para ${id}. Ajuste "databases" (name = arquivo do sqlitePlugin.openDatabase, global = variável que guarda a conexão).`);
   console.log('Adicione ".devbridge/" ao .gitignore (histórico de SQL e cópias de banco).');
@@ -102,7 +104,6 @@ async function cmdStart(config, flags) {
   }
   console.log(`[devbridge] servindo ${path.relative(process.cwd(), config.wwwDir) || '.'} em ${config.url}`);
   console.log(`[devbridge] console SQL/logs: ${config.url}/__devbridge/`);
-  console.log(`[devbridge] escrita no banco: ${config.allowWrites ? 'LIGADA' : 'desligada'}`);
   const stop = () => server.close().then(() => process.exit(0));
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
@@ -209,6 +210,12 @@ async function main() {
       return cmdNetwork(api, args);
     case 'sql':
       return cmdSql(api, args);
+    case 'eval': {
+      const expression = args._.slice(1).join(' ');
+      if (!expression) throw new Error('Informe a expressão: devbridge eval "location.hash"');
+      const r = await api.evaluate({ expression, timeoutMs: args.flags.timeout ? Number(args.flags.timeout) : undefined });
+      return console.log(args.flags.json ? JSON.stringify(r, null, 2) : evalResult(r));
+    }
     case 'tables': {
       const r = await api.tables(args.flags.db);
       return console.log(table(['name', 'type'], r.rows) + `\n(banco: ${r.database})`);

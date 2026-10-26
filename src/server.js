@@ -161,7 +161,6 @@ class DevServer {
         root: this.config.root,
         port: this.port,
         boot: this.boot,
-        allowWrites: !!this.config.allowWrites,
         reloadKeepRoute: this.keepRoute(),
         reloadRestore: this.config.reloadRestoreFile,
         clients: this.clients.size,
@@ -192,9 +191,6 @@ class DevServer {
   async sql({ sql, params = [], db, write = false, maxRows = 1000 }) {
     const problem = checkSql(sql, { write });
     if (problem) throw new Error(problem);
-    if (write && !this.config.allowWrites) {
-      throw new Error('Escrita desligada: defina "allowWrites": true no devbridge.config.json.');
-    }
     const spec = resolveDatabase(this.config, db);
     const payload = { sql, params, write, maxRows, db: { global: spec.global, name: spec.name } };
     let result;
@@ -229,6 +225,27 @@ class DevServer {
     await fsp.mkdir(this.config.stateDir, { recursive: true });
     const line = [new Date().toISOString(), alias, sql.replace(/\s+/g, ' ').trim(), JSON.stringify(params || []), outcome].join('\t');
     await fsp.appendFile(path.join(this.config.stateDir, 'sql-history.log'), line + '\n');
+  }
+
+  async evaluate({ expression, timeoutMs = 10000 } = {}) {
+    if (typeof expression !== 'string' || !expression.trim()) throw new Error('Expressão vazia.');
+    const limit = Math.min(Math.max(Number(timeoutMs) || 10000, 100), 120000);
+    let result;
+    try {
+      // Folga sobre o limite do app: o timeout da promessa chega antes do da requisição.
+      result = await this.request('eval', { expression, timeoutMs: limit }, limit + 2000);
+    } catch (err) {
+      await this.evalHistory(expression, `ERRO ${err.message.split('\n')[0]}`);
+      throw err;
+    }
+    await this.evalHistory(expression, `ok ${result.type}`);
+    return result;
+  }
+
+  async evalHistory(expression, outcome) {
+    await fsp.mkdir(this.config.stateDir, { recursive: true });
+    const line = [new Date().toISOString(), expression.replace(/\s+/g, ' ').trim(), outcome].join('\t');
+    await fsp.appendFile(path.join(this.config.stateDir, 'eval-history.log'), line + '\n');
   }
 
   async tables(db) {
@@ -323,6 +340,8 @@ class DevServer {
           return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
+        case 'POST /eval':
+          return this.json(res, 200, await this.evaluate(await readJson(req)));
         case 'GET /tables':
           return this.json(res, 200, await this.tables(q.get('db')));
         case 'GET /schema':

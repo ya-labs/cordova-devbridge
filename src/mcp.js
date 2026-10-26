@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, logLine, networkLine, networkDetail } = require('./format');
+const { sqlResult, logLine, networkLine, networkDetail, evalResult } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -92,9 +92,19 @@ function buildTools(config) {
       description: 'Captura a tela do celular (adb screencap).',
       inputSchema: { type: 'object', properties: {} },
     },
-  ];
-  if (config.allowWrites) {
-    tools.push({
+    {
+      name: 'app_eval',
+      description: 'Avalia JavaScript no app rodando (escopo global do WebView) e devolve o valor; promessas são esperadas. Útil para ler estado do AngularJS, ex.: angular.element(document.body).injector().get("MeuServico") ou angular.element(document.querySelector("[ng-controller]")).scope(). Pode alterar o estado do app; fica registrado em .devbridge/eval-history.log.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          expression: { type: 'string', description: 'Expressão ou bloco; volta o valor da última instrução.' },
+          timeoutMs: { type: 'number', description: 'Espera máxima por uma promessa (padrão 10000, máximo 120000).' },
+        },
+        required: ['expression'],
+      },
+    },
+    {
       name: 'db_exec',
       description: 'Executa UMA instrução SQL de ESCRITA (INSERT/UPDATE/DELETE/DDL) em transação no SQLite do app. Altera dados reais do aparelho de teste; fica registrada em .devbridge/sql-history.log.',
       inputSchema: {
@@ -102,8 +112,8 @@ function buildTools(config) {
         properties: { sql: { type: 'string' }, params: { type: 'array' }, db: dbProp },
         required: ['sql'],
       },
-    });
-  }
+    },
+  ];
   return tools;
 }
 
@@ -133,6 +143,8 @@ async function callTool(api, name, args) {
       const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, maxRows: args.maxRows || 200 });
       return text(sqlResult(r));
     }
+    case 'app_eval':
+      return text(evalResult(await api.evaluate({ expression: args.expression, timeoutMs: args.timeoutMs })));
     case 'db_exec': {
       const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, write: true });
       return text(sqlResult(r));

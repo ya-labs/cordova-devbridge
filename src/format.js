@@ -89,4 +89,26 @@ function networkDetail(e, { maxBody = 8000 } = {}) {
   return out.join('\n\n');
 }
 
-module.exports = { table, sqlResult, logLine, networkLine, networkDetail };
+// Valores que o JSON não representa chegam como { __dvb: texto } (mesma cópia dos logs).
+function plain(v) {
+  if (Array.isArray(v)) return v.map(plain);
+  if (v && typeof v === 'object') {
+    const keys = Object.keys(v);
+    if (keys.length === 1 && typeof v.__dvb === 'string') return v.__dvb;
+    const out = {};
+    for (const k of keys) out[k] = plain(v[k]);
+    return out;
+  }
+  return v;
+}
+
+function evalResult(r, { max = 20000 } = {}) {
+  const special = r.value && typeof r.value === 'object' && !Array.isArray(r.value) && Object.keys(r.value).length === 1 && typeof r.value.__dvb === 'string';
+  let body = special ? r.value.__dvb : JSON.stringify(plain(r.value), null, 2);
+  if (body.length > max) body = `${body.slice(0, max)}\n[mostrando ${max} de ${body.length} caracteres]`;
+  const info = [`tipo: ${r.type}`, `${r.ms} ms`];
+  if (r.awaited) info.push('promessa resolvida');
+  return `${body}\n\n(${info.join(' · ')})`;
+}
+
+module.exports = { table, sqlResult, logLine, networkLine, networkDetail, evalResult };
