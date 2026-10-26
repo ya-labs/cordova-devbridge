@@ -546,26 +546,46 @@
 
   // Leitura vai em readTransaction: o plugin recusa escrita ali, segunda
   // barreira além do filtro do servidor.
+  // Lote (req.statements): todas na mesma transação, uma depois da outra; a
+  // primeira que falha desfaz o lote inteiro e o erro diz qual foi.
   function runSql(req, reply) {
     getDb(req.db, function (err, db, label) {
       if (err) return reply(false, null, err.message, err.code);
-      var result = null;
+      var list = req.statements || [{ sql: req.sql, params: req.params }];
+      var results = [];
       var failure = null;
+      var failedAt = -1;
       var started = Date.now();
       var method = req.write ? 'transaction' : (db.readTransaction ? 'readTransaction' : 'transaction');
+      function fail(f) {
+        var msg = f.message || String(f);
+        if (req.statements && failedAt >= 0) msg = 'Instrução ' + (failedAt + 1) + ' de ' + list.length + ': ' + msg + (req.write ? ' (lote desfeito)' : '');
+        reply(false, null, msg, f.code);
+      }
       db[method](function (tx) {
-        tx.executeSql(req.sql, req.params || [], function (tx2, rs) {
-          result = rs;
-        }, function (tx2, e) {
-          failure = e;
-          return true; // desfaz a transação
-        });
+        (function next(i) {
+          if (i >= list.length) return;
+          tx.executeSql(list[i].sql, list[i].params || [], function (tx2, rs) {
+            results[i] = rs;
+            next(i + 1);
+          }, function (tx2, e) {
+            failure = e;
+            failedAt = i;
+            return true; // desfaz a transação
+          });
+        })(0);
       }, function (e) {
-        var f = failure || e || {};
-        reply(false, null, f.message || String(f), f.code);
+        fail(failure || e || {});
       }, function () {
-        if (failure) return reply(false, null, failure.message || String(failure), failure.code);
-        var out = toResult(result, req.maxRows || 1000, req.write);
+        if (failure) return fail(failure);
+        var maxRows = req.maxRows || 1000;
+        var out;
+        if (req.statements) {
+          out = { results: [] };
+          for (var i = 0; i < results.length; i++) out.results.push(toResult(results[i], maxRows, req.write));
+        } else {
+          out = toResult(results[0], maxRows, req.write);
+        }
         out.database = label;
         out.ms = Date.now() - started;
         reply(true, out);

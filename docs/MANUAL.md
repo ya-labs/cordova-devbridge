@@ -192,7 +192,7 @@ Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que
 
 ## 7. MCP para agentes de IA
 
-O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_navigate`, `app_eval` e `db_exec`. Ele conversa com o `dvb start`, que precisa estar rodando.
+O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_navigate`, `app_eval` e `db_exec`. `db_query` e `db_exec` aceitam um lote em `statements` (numa transação só), útil para o agente montar massa de teste numa chamada. Ele conversa com o `dvb start`, que precisa estar rodando.
 
 Registro, na raiz do app:
 

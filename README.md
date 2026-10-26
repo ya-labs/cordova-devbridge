@@ -116,6 +116,7 @@ devbridge network 12                               # cabeçalhos e corpos da req
 devbridge sql "select * from clientes limit 5"     # leitura (banco padrão)
 devbridge sql "select * from parametros" --db config
 devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
+devbridge sql --file massa.sql --write             # várias instruções numa transação só
 devbridge tables
 devbridge schema pedidos
 devbridge go /pedidos/12                           # leva o app à rota e mostra se ele redirecionou
@@ -145,7 +146,7 @@ No PC, a raiz `http://localhost:8100/` redireciona para o console. O app em si t
 **Segurança:**
 - Leitura é o padrão. A escrita exige um pedido explícito (`--write`, `db_exec` ou o checkbox "Escrita"); não há opção na config para ligá-la.
 - Leituras rodam em `readTransaction`, então o próprio plugin recusa escrita.
-- Uma instrução por chamada.
+- Uma instrução por chamada, ou um lote explícito: `statements` no MCP/API ou `--file` na CLI, numa transação só (se uma falha, nada é gravado e o erro diz qual foi).
 - Toda escrita fica em `.devbridge/sql-history.log`.
 - O eval de JavaScript está sempre disponível, e toda expressão fica em `.devbridge/eval-history.log`. Ele roda com os mesmos poderes do app: pode alterar o estado, e um laço infinito trava o app (o timeout só vale para promessas).
 - O servidor só escuta em `127.0.0.1`.
@@ -170,7 +171,7 @@ Ferramentas expostas:
 - `app_screenshot`
 - `app_navigate` (leva o app a uma rota e diz se ele redirecionou)
 - `app_eval`
-- `db_exec` (escrita)
+- `db_exec` (escrita); `db_query` e `db_exec` aceitam `statements` para um lote numa transação só
 
 O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `app_network` / `db_query` / `app_screenshot` para validar.
 

@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, logLine, networkLine, networkDetail, evalResult, navigateResult } = require('./format');
+const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -10,6 +10,11 @@ const PROTOCOL_VERSION = '2025-06-18';
 // Só repassa para a API local do `devbridge start`.
 function buildTools(config) {
   const dbs = Object.keys(config.databases);
+  const statementsProp = {
+    type: 'array',
+    description: 'Lote: várias instruções numa transação só, em vez de "sql". Se uma falha, nada do lote é gravado e o erro diz qual foi.',
+    items: { type: 'object', properties: { sql: { type: 'string' }, params: { type: 'array' } }, required: ['sql'] },
+  };
   const dbProp = {
     type: 'string',
     description: `Banco: ${dbs.length ? dbs.join(', ') : 'nome do arquivo .db'} (padrão: ${config.defaultDb || 'nenhum'}). Também aceita nome de arquivo .db.`,
@@ -65,16 +70,16 @@ function buildTools(config) {
     },
     {
       name: 'db_query',
-      description: 'Executa UMA instrução SQL de leitura (SELECT, WITH, PRAGMA de introspecção) no SQLite do app rodando no celular.',
+      description: 'Executa SQL de leitura (SELECT, WITH, PRAGMA de introspecção) no SQLite do app rodando no celular: uma instrução em "sql" ou várias em "statements".',
       inputSchema: {
         type: 'object',
         properties: {
           sql: { type: 'string' },
           params: { type: 'array', description: 'Valores para os "?" do SQL.' },
+          statements: statementsProp,
           db: dbProp,
-          maxRows: { type: 'number', description: 'Padrão 200.' },
+          maxRows: { type: 'number', description: 'Padrão 200, por instrução.' },
         },
-        required: ['sql'],
       },
     },
     {
@@ -115,11 +120,10 @@ function buildTools(config) {
     },
     {
       name: 'db_exec',
-      description: 'Executa UMA instrução SQL de ESCRITA (INSERT/UPDATE/DELETE/DDL) em transação no SQLite do app. Altera dados reais do aparelho de teste; fica registrada em .devbridge/sql-history.log.',
+      description: 'Executa SQL de ESCRITA (INSERT/UPDATE/DELETE/DDL) em transação no SQLite do app: uma instrução em "sql" ou um lote em "statements" (ex.: massa de teste com vários INSERT). Altera dados reais do aparelho de teste; fica registrado em .devbridge/sql-history.log.',
       inputSchema: {
         type: 'object',
-        properties: { sql: { type: 'string' }, params: { type: 'array' }, db: dbProp },
-        required: ['sql'],
+        properties: { sql: { type: 'string' }, params: { type: 'array' }, statements: statementsProp, db: dbProp },
       },
     },
   ];
@@ -149,16 +153,16 @@ async function callTool(api, name, args) {
     case 'app_network_entry':
       return text(networkDetail(await api.networkEntry(args.id), { maxBody: args.maxBody || 8000 }));
     case 'db_query': {
-      const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, maxRows: args.maxRows || 200 });
-      return text(sqlResult(r));
+      const r = await api.sql({ sql: args.sql, params: args.params, statements: args.statements, db: args.db, maxRows: args.maxRows || 200 });
+      return text(r.results ? sqlBatchResult(r, args.statements) : sqlResult(r));
     }
     case 'app_navigate':
       return text(navigateResult(await api.navigate(args.route)));
     case 'app_eval':
       return text(evalResult(await api.evaluate({ expression: args.expression, timeoutMs: args.timeoutMs })));
     case 'db_exec': {
-      const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, write: true });
-      return text(sqlResult(r));
+      const r = await api.sql({ sql: args.sql, params: args.params, statements: args.statements, db: args.db, write: true });
+      return text(r.results ? sqlBatchResult(r, args.statements) : sqlResult(r));
     }
     case 'db_tables': {
       const r = await api.tables(args.db);
