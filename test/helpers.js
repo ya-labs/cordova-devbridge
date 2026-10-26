@@ -120,7 +120,18 @@ function fakeSqlitePlugin(data) {
 }
 
 // Roda o client real num vm com EventSource/XHR mínimos apontando para o servidor.
-function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
+// Storage com a interface do navegador (getItem/setItem/removeItem/key/length) sobre um objeto.
+function makeStorage(obj) {
+  return {
+    getItem: (k) => (k in obj ? obj[k] : null),
+    setItem: (k, v) => { obj[k] = String(v); },
+    removeItem: (k) => { delete obj[k]; },
+    key: (i) => Object.keys(obj)[i] ?? null,
+    get length() { return Object.keys(obj).length; },
+  };
+}
+
+function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {}, local = {} } = {}) {
   const calls = { reload: 0, logs: [], hrefsOnReload: [] };
   const listeners = {};
   const docListeners = {};
@@ -244,11 +255,8 @@ function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
       },
     },
     // Compartilhado entre clients do mesmo teste para simular o sessionStorage que sobrevive ao reload.
-    sessionStorage: {
-      getItem: (k) => (k in storage ? storage[k] : null),
-      setItem: (k, v) => { storage[k] = String(v); },
-      removeItem: (k) => { delete storage[k]; },
-    },
+    sessionStorage: makeStorage(storage),
+    localStorage: makeStorage(local),
     addEventListener: (t, fn) => (listeners[t] = fn),
     EventSource,
     XMLHttpRequest,

@@ -237,8 +237,9 @@
   /* ---- logs ---- */
   .logs { flex: none; display: flex; flex-direction: column; height: var(--logs-h, 240px); min-height: 0; background: var(--surface); border-top: 1px solid var(--line); position: relative; }
   .logs.collapsed { height: 42px !important; }
-  .logs.collapsed #logs, .logs.collapsed #net, .logs.collapsed .prompt { display: none; }
-  .logs[data-tab="logs"] [data-for="net"], .logs[data-tab="net"] [data-for="logs"] { display: none !important; }
+  .logs.collapsed #logs, .logs.collapsed #net, .logs.collapsed #store, .logs.collapsed .prompt { display: none; }
+  .logs[data-tab="logs"] [data-for]:not([data-for="logs"]), .logs[data-tab="net"] [data-for]:not([data-for="net"]), .logs[data-tab="store"] [data-for]:not([data-for="store"]) { display: none !important; }
+  .logs[data-tab="store"] #followLabel, .logs[data-tab="store"] #clearLogs { display: none; }
   .resizer { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 2; }
   .resizer::after { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 3px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); opacity: 0; transition: opacity .15s; }
   .resizer:hover::after, .logs.resizing .resizer::after { opacity: 1; }
@@ -308,6 +309,18 @@
   #net .det .note { color: var(--faint); font-family: var(--sans); font-style: italic; }
   #net .det .err { color: var(--danger); }
   .logs-head input.field { width: 200px; }
+  /* storage */
+  #store { flex: 1; overflow: auto; margin: 0; padding: 6px 0; font: 12px/1.55 var(--mono); }
+  #store .placeholder { padding: 10px 14px; color: var(--faint); font: 12.5px var(--sans); }
+  #store .item { display: grid; grid-template-columns: minmax(120px, 260px) 70px 1fr; gap: 10px; padding: 1px 14px; cursor: pointer; }
+  #store .item:hover, #store .item.open { background: var(--surface-2); }
+  #store .k { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #store .sz { color: var(--faint); text-align: right; }
+  #store .pv { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #store .tag { margin-left: 6px; font: 600 10px var(--sans); color: var(--accent); background: var(--accent-soft); border-radius: 4px; padding: 0 5px; }
+  #store .det { padding: 6px 14px 12px 24px; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }
+  #store .det:hover .jt .copy { opacity: 1; }
+  #store .det .note { color: var(--faint); font-family: var(--sans); font-style: italic; }
   /* JavaScript no app: expressão e resultado entram na lista de logs */
   #logs .line.eval-in .msg { color: var(--muted); }
   #logs .line.eval-in .lv, #logs .line.eval-out .lv { background: transparent; color: var(--accent); font: 700 13px/18px var(--mono); }
@@ -409,13 +422,18 @@
         <h2 class="tabs">
           <button class="tab" data-tab="logs">Console do app <span class="count" id="logCount">0</span></button>
           <button class="tab" data-tab="net">Rede <span class="count" id="netCount">0</span></button>
+          <button class="tab" data-tab="store">Storage <span class="count" id="storeCount">0</span></button>
         </h2>
         <span class="spacer"></span>
         <select id="level" class="field" data-for="logs" title="Filtrar por nível"><option value="">Todos</option><option value="warn,error">Avisos e erros</option><option value="error">Só erros</option></select>
         <input type="text" id="netUrl" class="field hide-sm" data-for="net" placeholder="Filtrar URL" autocomplete="off" spellcheck="false">
         <label class="switch" data-for="net" title="Só status >= 400, sem resposta ou erro de rede"><input type="checkbox" id="netFailed"><span class="track"></span><span class="hide-sm">Só falhas</span></label>
         <label class="switch" data-for="net" title="Inclui requisições ao próprio servidor de desenvolvimento (templates, js)"><input type="checkbox" id="netLocal"><span class="track"></span><span class="hide-sm">Locais</span></label>
-        <label class="switch" title="Rolar automaticamente para o fim"><input type="checkbox" id="follow" checked><span class="track"></span><span class="hide-sm">Seguir</span></label>
+        <select id="storeArea" class="field" data-for="store" title="Área de armazenamento"><option value="local">localStorage</option><option value="session">sessionStorage</option><option value="native">NativeStorage</option></select>
+        <button class="btn ghost" id="storeRefresh" data-for="store" title="Ler de novo do app">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>Atualizar
+        </button>
+        <label class="switch" id="followLabel" title="Rolar automaticamente para o fim"><input type="checkbox" id="follow" checked><span class="track"></span><span class="hide-sm">Seguir</span></label>
         <button class="btn ghost" id="clearLogs" title="Limpar a lista (não apaga do servidor)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>Limpar
         </button>
@@ -426,6 +444,7 @@
         <textarea id="evalInput" rows="1" spellcheck="false" autocomplete="off" placeholder="JavaScript no app · Enter executa · Shift+Enter quebra linha · ↑ anterior"></textarea>
       </div>
       <div id="net" data-for="net"><div class="placeholder">Aguardando requisições do app…</div></div>
+      <div id="store" data-for="store"><div class="placeholder">Escolha a área e clique em Atualizar.</div></div>
     </section>
   </div>
 </main>
@@ -1157,6 +1176,69 @@
   };
   $('evalInput').oninput = fitEval;
 
+  // ---- storage ----
+  // Só leitura: a lista e o valor de cada chave (gravar/apagar ficam no MCP e na CLI).
+  var storeOpen = {};
+
+  function storeDetail(area, key, det) {
+    api('POST', '/storage', { area: area, key: key }).then(function (r) {
+      det.innerHTML = '';
+      if (r.json !== undefined) {
+        var t = tree(r.json, true);
+        t.firstChild.onclick();
+        det.appendChild(t);
+      } else {
+        det.appendChild(el('span', null, r.value));
+      }
+      var notes = [r.size + ' caracteres'];
+      if (r.truncated) notes.push('mostrando ' + r.value.length);
+      if (r.internal) notes.push('chave do próprio devbridge (reloadRestore)');
+      det.appendChild(el('div', 'note', notes.join(' · ')));
+    }).catch(function (e) { det.textContent = e.message; });
+  }
+
+  function loadStore() {
+    var area = $('storeArea').value;
+    var box = $('store');
+    box.innerHTML = '<div class="placeholder">Lendo do app…</div>';
+    storeOpen = {};
+    api('POST', '/storage', { area: area }).then(function (r) {
+      box.innerHTML = '';
+      $('storeCount').textContent = r.items.length;
+      if (!r.items.length) box.innerHTML = '<div class="placeholder">Nada guardado em ' + $('storeArea').selectedOptions[0].textContent + '.</div>';
+      r.items.forEach(function (i) {
+        var row = el('div', 'item');
+        var k = el('span', 'k', i.key);
+        if (i.internal) k.appendChild(el('span', 'tag', 'devbridge'));
+        row.appendChild(k);
+        row.appendChild(el('span', 'sz', i.size + ' c'));
+        row.appendChild(el('span', 'pv', i.preview));
+        row.title = i.key;
+        row.onclick = function () {
+          if (storeOpen[i.key]) {
+            storeOpen[i.key].remove();
+            delete storeOpen[i.key];
+            row.classList.remove('open');
+            return;
+          }
+          var det = el('div', 'det', 'Carregando…');
+          storeOpen[i.key] = det;
+          row.after(det);
+          row.classList.add('open');
+          storeDetail(area, i.key, det);
+        };
+        box.appendChild(row);
+      });
+    }).catch(function (e) {
+      $('storeCount').textContent = '0';
+      box.innerHTML = '';
+      box.appendChild(el('div', 'placeholder', e.message));
+    });
+  }
+
+  $('storeArea').onchange = loadStore;
+  $('storeRefresh').onclick = loadStore;
+
   // Painel de logs: altura arrastável e recolhível, lembradas entre visitas.
   var panel = $('logsPanel');
   function setLogsHeight(h) {
@@ -1170,8 +1252,10 @@
     panel.dataset.tab = tab;
     Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
     store('bottomTab', tab);
+    // Storage não é acompanhado ao vivo: lê ao abrir a aba e no Atualizar.
+    if (tab === 'store') loadStore();
   }
-  setTab(store('bottomTab') === 'net' ? 'net' : 'logs');
+  setTab(['net', 'store'].indexOf(store('bottomTab')) >= 0 ? store('bottomTab') : 'logs');
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
     b.onclick = function () {
       setTab(b.dataset.tab);

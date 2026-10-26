@@ -593,6 +593,96 @@
     });
   }
 
+  // ---- storage ----------------------------------------------------------
+  // local/session pela API do navegador; native pelo cordova-plugin-nativestorage.
+  // Chaves devbridge.* (estado do reloadRestore) aparecem, mas não podem ser alteradas.
+  var STORAGE_VALUE_LIMIT = 65536;
+
+  function isInternalKey(k) { return String(k).indexOf('devbridge.') === 0; }
+
+  function storageItem(key, raw) {
+    var text = typeof raw === 'string' ? raw : serialize(raw);
+    return { key: key, size: text.length, preview: text.length > 120 ? text.slice(0, 120) + '…' : text, internal: isInternalKey(key) };
+  }
+
+  function storageValue(area, key, raw) {
+    var text = typeof raw === 'string' ? raw : serialize(raw);
+    var out = { area: area, key: key, size: text.length, internal: isInternalKey(key), value: text.slice(0, STORAGE_VALUE_LIMIT), truncated: text.length > STORAGE_VALUE_LIMIT };
+    var parsed = raw;
+    if (typeof raw === 'string') {
+      try { parsed = JSON.parse(raw); } catch (e) { parsed = null; }
+    }
+    if (parsed && typeof parsed === 'object') out.json = cloneArg(parsed, [], { n: 0 }, 0);
+    return out;
+  }
+
+  function byKey(a, b) { return a.key < b.key ? -1 : a.key > b.key ? 1 : 0; }
+
+  function runStorage(req, reply) {
+    var action = req.action;
+    if ((action === 'set' || action === 'remove') && isInternalKey(req.key)) {
+      return reply(false, null, 'A chave "' + req.key + '" é do próprio devbridge (reloadRestore) e não pode ser alterada por aqui.');
+    }
+    if (req.area === 'native') return runNativeStorage(req, reply);
+    var st = null;
+    try { st = req.area === 'local' ? window.localStorage : window.sessionStorage; } catch (e) { st = null; }
+    if (!st) return reply(false, null, req.area + 'Storage indisponível neste WebView.');
+    try {
+      if (action === 'list') {
+        var items = [];
+        for (var i = 0; i < st.length; i++) items.push(storageItem(st.key(i), st.getItem(st.key(i))));
+        return reply(true, { area: req.area, items: items.sort(byKey) });
+      }
+      if (action === 'get') {
+        var v = st.getItem(req.key);
+        if (v === null) return reply(false, null, 'Chave não encontrada em ' + req.area + ': ' + req.key);
+        return reply(true, storageValue(req.area, req.key, v));
+      }
+      if (action === 'set') {
+        st.setItem(req.key, req.value);
+        return reply(true, { area: req.area, key: req.key, action: 'set', size: String(req.value).length });
+      }
+      var existed = st.getItem(req.key) !== null;
+      st.removeItem(req.key);
+      reply(true, { area: req.area, key: req.key, action: 'remove', removed: existed });
+    } catch (e) {
+      reply(false, null, e.message || String(e));
+    }
+  }
+
+  // NativeStorage é assíncrono e guarda o valor já interpretado (objeto, número, texto).
+  function runNativeStorage(req, reply) {
+    var ns = window.NativeStorage;
+    if (!ns) return reply(false, null, 'NativeStorage indisponível: o app não tem o cordova-plugin-nativestorage ou o deviceready ainda não disparou.');
+    function fail(e) { reply(false, null, 'NativeStorage: ' + ((e && (e.exception || e.message || e.code)) || String(e))); }
+    var NOT_FOUND = 2;
+    if (req.action === 'list') {
+      return ns.keys(function (keys) {
+        var items = [];
+        var left = keys.length;
+        if (!left) return reply(true, { area: 'native', items: [] });
+        function done() {
+          if (--left === 0) reply(true, { area: 'native', items: items.sort(byKey) });
+        }
+        keys.forEach(function (k) {
+          ns.getItem(k, function (v) { items.push(storageItem(k, v)); done(); }, function () { items.push({ key: k, size: 0, preview: '(ilegível)', internal: isInternalKey(k) }); done(); });
+        });
+      }, fail);
+    }
+    if (req.action === 'get') {
+      return ns.getItem(req.key, function (v) { reply(true, storageValue('native', req.key, v)); }, function (e) {
+        if (e && e.code === NOT_FOUND) return reply(false, null, 'Chave não encontrada em native: ' + req.key);
+        fail(e);
+      });
+    }
+    if (req.action === 'set') {
+      var value = req.value;
+      try { value = JSON.parse(req.value); } catch (e) { value = req.value; }
+      return ns.setItem(req.key, value, function () { reply(true, { area: 'native', key: req.key, action: 'set', size: String(req.value).length }); }, fail);
+    }
+    ns.remove(req.key, function () { reply(true, { area: 'native', key: req.key, action: 'remove', removed: true }); }, fail);
+  }
+
   // ---- navegação ---------------------------------------------------------
   // A rota segue o prefixo que o app já usa (#! ou #). A resposta espera o hash
   // ficar parado: uma guarda de login ou o otherwise do router pode redirecionar.
@@ -736,6 +826,14 @@
       var req = JSON.parse(ev.data);
       try {
         runSql(req, replyFor(req.id));
+      } catch (e) {
+        replyFor(req.id)(false, null, e.message || String(e));
+      }
+    });
+    es.addEventListener('storage', function (ev) {
+      var req = JSON.parse(ev.data);
+      try {
+        runStorage(req, replyFor(req.id));
       } catch (e) {
         replyFor(req.id)(false, null, e.message || String(e));
       }

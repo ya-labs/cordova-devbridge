@@ -119,6 +119,9 @@ devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",
 devbridge sql --file massa.sql --write             # várias instruções numa transação só
 devbridge tables
 devbridge schema pedidos
+devbridge storage local                            # chaves do localStorage (session, native também)
+devbridge storage native config                    # valor de uma chave do NativeStorage
+devbridge storage local tema --set claro           # grava (--remove apaga); vai para .devbridge/storage-history.log
 devbridge go /pedidos/12                           # leva o app à rota e mostra se ele redirecionou
 devbridge eval "location.hash"                     # JavaScript no app
 devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
@@ -134,6 +137,8 @@ devbridge screenshot
 Ctrl+Enter executa o SQL.
 
 **Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo, e o servidor guarda as 500 requisições mais recentes.
+
+**Storage:** a aba "Storage" lista as chaves de `localStorage`, `sessionStorage` ou NativeStorage, com tamanho e prévia; clique numa chave para ver o valor (JSON vira árvore). Ela é só leitura e lê ao abrir a aba ou em "Atualizar"; gravar e apagar ficam no MCP e na CLI. Chaves `devbridge.*` são do próprio devbridge (`reloadRestore`) e não podem ser alteradas.
 
 **Rota:** clique no caminho do app no indicador de status (topo) para editar a rota; Enter leva o app até ela.
 
@@ -169,6 +174,7 @@ Ferramentas expostas:
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
+- `app_storage` (localStorage, sessionStorage e NativeStorage: lista, lê, grava e apaga)
 - `app_navigate` (leva o app a uma rota e diz se ele redirecionou)
 - `app_eval`
 - `db_exec` (escrita); `db_query` e `db_exec` aceitam `statements` para um lote numa transação só

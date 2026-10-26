@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult } = require('./format');
+const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -98,6 +98,20 @@ function buildTools(config) {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'app_storage',
+      description: 'Lê o armazenamento do app fora do SQLite: localStorage ("local"), sessionStorage ("session") e NativeStorage ("native"). Sem key lista as chaves com prévia; com key devolve o valor (JSON formatado). action "set"/"remove" grava ou apaga (fica em .devbridge/storage-history.log). Chaves devbridge.* são do próprio devbridge e não podem ser alteradas.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          area: { type: 'string', enum: ['local', 'session', 'native'] },
+          key: { type: 'string' },
+          action: { type: 'string', enum: ['list', 'get', 'set', 'remove'], description: 'Padrão: get com key, list sem.' },
+          value: { type: 'string', description: 'Para set: texto; no native, um JSON válido é gravado como objeto.' },
+        },
+        required: ['area'],
+      },
+    },
+    {
       name: 'app_navigate',
       description: 'Leva o app a uma rota (hash do AngularJS) e devolve a rota final, avisando se o app redirecionou (guarda de login, otherwise). Use antes de app_screenshot/app_logs para validar uma tela específica. Só depois do deviceready.',
       inputSchema: {
@@ -156,6 +170,8 @@ async function callTool(api, name, args) {
       const r = await api.sql({ sql: args.sql, params: args.params, statements: args.statements, db: args.db, maxRows: args.maxRows || 200 });
       return text(r.results ? sqlBatchResult(r, args.statements) : sqlResult(r));
     }
+    case 'app_storage':
+      return text(storageResult(await api.storage({ area: args.area, key: args.key, action: args.action, value: args.value })));
     case 'app_navigate':
       return text(navigateResult(await api.navigate(args.route)));
     case 'app_eval':

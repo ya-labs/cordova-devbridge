@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const { splitSql } = require('../src/sqlguard');
 const adb = require('../src/adb');
@@ -34,6 +34,8 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
                              executa SQL no app rodando (leitura por padrão)
   sql --file script.sql [--db X] [--write] [--json]
                              várias instruções numa transação só
+  storage <local|session|native> [CHAVE] [--set VALOR | --remove] [--json]
+                             lista chaves, lê, grava ou apaga o storage do app
   go <ROTA>                  leva o app à rota (ex.: /pedidos/12) e mostra onde ele parou
   eval "<JS>" [--timeout ms] [--json]
                              avalia JavaScript no app
@@ -46,7 +48,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -220,6 +222,12 @@ async function main() {
       return cmdNetwork(api, args);
     case 'sql':
       return cmdSql(api, args);
+    case 'storage': {
+      const [, area, key] = args._;
+      const action = args.flags.set !== undefined ? 'set' : args.flags.remove ? 'remove' : undefined;
+      const r = await api.storage({ area, key, action, value: args.flags.set });
+      return console.log(args.flags.json ? JSON.stringify(r, null, 2) : storageResult(r));
+    }
     case 'go': {
       if (!args._[1]) throw new Error('Informe a rota: devbridge go /pedidos');
       return console.log(navigateResult(await api.navigate(args._[1])));
