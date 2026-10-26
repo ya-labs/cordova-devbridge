@@ -11,6 +11,7 @@ const { checkSql } = require('./sqlguard');
 const { resolveDatabase } = require('./config');
 const adb = require('./adb');
 const { Mirror } = require('./mirror');
+const { NetworkLog } = require('./network');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
 const UI_DIR = path.join(__dirname, 'ui');
@@ -40,6 +41,7 @@ class DevServer {
     this.pending = new Map();
     this.logs = [];
     this.logSeq = 0;
+    this.network = new NetworkLog({ mask: config.networkMask !== false });
     this.reqSeq = 0;
     this.watcher = null;
     this.server = http.createServer((req, res) => this.handle(req, res).catch((err) => this.fail(res, 500, err.message)));
@@ -166,6 +168,8 @@ class DevServer {
         databases: this.config.databases,
         defaultDb: this.config.defaultDb,
         logs: this.logSeq,
+        network: this.network.seq,
+        networkMask: this.network.mask,
       },
       app: null,
     };
@@ -258,6 +262,11 @@ class DevServer {
       this.addLogs(body.client, body.entries);
       return this.json(res, 200, { ok: true });
     }
+    if (req.method === 'POST' && p === '/__devbridge/network') {
+      const body = await readJson(req);
+      this.network.add(body.client, body.events);
+      return this.json(res, 200, { ok: true });
+    }
     if (req.method === 'POST' && p === '/__devbridge/reply') {
       const body = await readJson(req);
       const pending = this.pending.get(body.id);
@@ -302,6 +311,16 @@ class DevServer {
           return this.json(res, 200, this.reload());
         case 'GET /logs':
           return this.json(res, 200, this.getLogs({ since: Number(q.get('since') || 0), level: q.get('level'), limit: Number(q.get('limit') || 500) }));
+        case 'GET /network':
+          return this.json(res, 200, this.network.list({
+            since: Number(q.get('since') || 0),
+            url: q.get('url'),
+            failed: q.get('failed') === '1' || q.get('failed') === 'true',
+            local: q.get('local') === '1' || q.get('local') === 'true',
+            limit: Number(q.get('limit') || 100),
+          }));
+        case 'GET /network/entry':
+          return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
         case 'GET /tables':

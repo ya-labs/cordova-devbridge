@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, logLine } = require('./format');
+const { sqlResult, logLine, networkLine, networkDetail } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -35,6 +35,32 @@ function buildTools(config) {
           level: { type: 'string', description: 'Filtro, ex.: "error" ou "warn,error".' },
           limit: { type: 'number', description: 'Máximo de linhas (padrão 200).' },
         },
+      },
+    },
+    {
+      name: 'app_network',
+      description: 'Lista as requisições HTTP do app ao backend (XHR, fetch e cordova-plugin-advanced-http): id, método, status, duração e URL. Use `since` com o `last` da chamada anterior para ver só o que mudou (inclui chamadas que terminaram depois). Detalhe com app_network_entry.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          since: { type: 'number', description: 'Retorna chamadas com seq maior que este.' },
+          url: { type: 'string', description: 'Filtra por trecho da URL.' },
+          failed: { type: 'boolean', description: 'Só falhas: status >= 400, sem resposta ou erro de rede.' },
+          local: { type: 'boolean', description: 'Inclui requisições ao próprio servidor de desenvolvimento (templates, js). Por padrão só aparecem se falharem.' },
+          limit: { type: 'number', description: 'Máximo de linhas (padrão 50).' },
+        },
+      },
+    },
+    {
+      name: 'app_network_entry',
+      description: 'Detalhe de uma requisição do app_network: cabeçalhos e corpos do pedido e da resposta (JSON formatado). Credenciais aparecem como *** quando networkMask está ligado.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'number', description: 'O #id mostrado pelo app_network.' },
+          maxBody: { type: 'number', description: 'Máximo de caracteres por corpo (padrão 8000).' },
+        },
+        required: ['id'],
       },
     },
     {
@@ -96,6 +122,13 @@ async function callTool(api, name, args) {
       const lines = r.entries.map(logLine).join('\n') || '(sem logs novos)';
       return text(`${lines}\n\n[last=${r.last}]`);
     }
+    case 'app_network': {
+      const r = await api.network({ since: args.since, url: args.url, failed: args.failed, local: args.local, limit: args.limit || 50 });
+      const lines = r.entries.map(networkLine).join('\n') || '(sem requisições novas)';
+      return text(`${lines}\n\n[last=${r.last}]`);
+    }
+    case 'app_network_entry':
+      return text(networkDetail(await api.networkEntry(args.id), { maxBody: args.maxBody || 8000 }));
     case 'db_query': {
       const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, maxRows: args.maxRows || 200 });
       return text(sqlResult(r));
@@ -135,7 +168,7 @@ function startMcp(config, { input = process.stdin, output = process.stdout } = {
             protocolVersion: params.protocolVersion || PROTOCOL_VERSION,
             capabilities: { tools: {} },
             serverInfo: { name: 'cordova-devbridge', version: require('../package.json').version },
-            instructions: `App Cordova em ${config.root}. Fluxo: editar www/ → app_reload → app_logs/db_query/app_screenshot para validar. Requer "devbridge start" rodando.`,
+            instructions: `App Cordova em ${config.root}. Fluxo: editar www/ → app_reload → app_logs/app_network/db_query/app_screenshot para validar. Requer "devbridge start" rodando.`,
           };
           break;
         case 'ping':

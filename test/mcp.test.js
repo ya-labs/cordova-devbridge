@@ -59,6 +59,19 @@ test('MCP por stdio: handshake, lista de ferramentas e consulta ao banco', async
 
     const reload = await rpc('tools/call', { name: 'app_reload', arguments: {} });
     assert.match(reload.result.content[0].text, /1 app/);
+
+    server.network.add('c1', [
+      { phase: 'start', id: 1, via: 'xhr', method: 'POST', url: 'http://erp/api/pedido', ts: Date.now(), request: { headers: { authorization: 'Bearer x' }, body: '{"item":1}', size: 10 } },
+      { phase: 'end', id: 1, ts: Date.now() + 30, status: 500, response: { body: '{"erro":"estoque"}', size: 18 } },
+    ]);
+    const net = await rpc('tools/call', { name: 'app_network', arguments: { failed: true } });
+    assert.match(net.result.content[0].text, /^#1 .* POST 500 30 ms http:\/\/erp\/api\/pedido \[xhr/);
+    assert.match(net.result.content[0].text, /\[last=2\]$/);
+    const entry = await rpc('tools/call', { name: 'app_network_entry', arguments: { id: 1 } });
+    assert.match(entry.result.content[0].text, /authorization: \*\*\*/);
+    assert.match(entry.result.content[0].text, /"erro": "estoque"/);
+    const missing = await rpc('tools/call', { name: 'app_network_entry', arguments: { id: 99 } });
+    assert.equal(missing.result.isError, true);
   } finally {
     child.kill();
     app.close();

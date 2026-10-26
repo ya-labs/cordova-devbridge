@@ -28,6 +28,8 @@ class Api {
   status() { return this.call('GET', '/status'); }
   reload() { return this.call('POST', '/reload'); }
   logs(opts) { return this.call('GET', '/logs', { query: opts }); }
+  network(opts) { return this.call('GET', '/network', { query: opts }); }
+  networkEntry(id) { return this.call('GET', '/network/entry', { query: { id } }); }
   sql(body) { return this.call('POST', '/sql', { body }); }
   tables(db) { return this.call('GET', '/tables', { query: { db } }); }
   schema(db, table) { return this.call('GET', '/schema', { query: { db, table } }); }

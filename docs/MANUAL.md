@@ -83,6 +83,7 @@ Daí sai a config:
 - **`global`:** com a conexão aberta pelo app, o devbridge usa exatamente o mesmo banco que a tela está usando. Só funciona se a variável for global (`var db` no topo de um script, ou `window.db`).
 - **`name` com `*`:** para bancos com parte variável (usuário, tenant). O devbridge lista os arquivos do aparelho via `adb run-as` e escolhe o que casa. Se casar com mais de um e o app ainda não abriu a conexão (antes do login, por exemplo), o comando pede `--db <arquivo.db>`.
 - **`allowWrites`:** deixe `false` se ninguém precisa alterar dados pelo PC. Mesmo com `true`, toda escrita exige um pedido explícito (`--write`, `db_exec` ou o checkbox "escrita" do console).
+- **`networkMask`** (opcional, padrão `true`): esconde credenciais no inspetor de rede (cabeçalhos `Authorization`/`Cookie` e campos de senha ou token). Use `false` só se precisar ver o valor exato, por exemplo para depurar um login.
 
 Para conferir os arquivos que existem no aparelho (exige o APK debug instalado):
 
@@ -181,6 +182,7 @@ Para testar: entre numa tela interna, salve um `.js` e confira `dvb status` (o `
 Abra `http://localhost:8100/__devbridge/` no navegador do PC:
 - lista de tabelas, grade, SQL com Ctrl+Enter e histórico;
 - logs do app ao vivo;
+- aba "Rede": as requisições do app ao backend; clique numa linha para ver cabeçalhos e corpos. "Só falhas" filtra status >= 400 e erros de rede; "Locais" inclui templates e scripts do próprio servidor;
 - com "escrita" ligada: duplo clique edita a célula, "+ Registro" inclui, ✕ exclui (com confirmação);
 - botão para recarregar o app;
 - botão "Tela", que abre a tela do celular ao vivo numa janela separada (`/__devbridge/mirror`): 4 a 5 quadros por segundo, espaço pausa e o download salva o quadro em PNG. Para não pesar no celular, a captura para quando a janela é minimizada ou fechada. Se o navegador bloquear a janela, permita pop-ups de `localhost:8100`.
@@ -189,7 +191,7 @@ Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que
 
 ## 7. MCP para agentes de IA
 
-O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `db_query`, `db_tables`, `db_schema`, `app_screenshot` e, com `allowWrites`, `db_exec`. Ele conversa com o `dvb start`, que precisa estar rodando.
+O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot` e, com `allowWrites`, `db_exec`. Ele conversa com o `dvb start`, que precisa estar rodando.
 
 Registro, na raiz do app:
 
@@ -222,6 +224,7 @@ Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `l
 | Console web fica carregando para sempre | aba de `localhost:8100/` (o app) aberta no Chrome, travando o processo do site | feche todas as abas de `localhost:8100` (Shift+Esc no Chrome) e abra só `/__devbridge/` |
 | SQL ou status parecem vir de outro lugar | outra página com o client conectada | `dvb status` mostra o `userAgent` do client ativo e `server.clients`; feche a aba extra |
 | No `chrome://inspect`, todo log aponta para `client.js` | source maps desligados no DevTools; sem o map, o client não entra na ignore list | DevTools → Settings → Preferences → Sources → **Enable JavaScript source maps**; em Settings → Ignore list, deixe ligado **Automatically add known third-party scripts to ignore list** |
+| Uma requisição não aparece na aba Rede | é ao próprio servidor e deu certo (escondida por padrão), ou sai por um plugin nativo que não é o `cordova-plugin-advanced-http` (WebSocket, outro plugin HTTP) | ligue "Locais" (`--local`, `local: true` no MCP); requisições de outros plugins nativos não passam pelo WebView e não são capturadas |
 | Mudança de CSS não aparece | o arquivo não está ligado por `<link>` no `index.html` | o devbridge recarrega a página nesse caso; confira `dvb logs` |
 | `AVISO: AndroidManifest sem usesCleartextTraffic` no build | falta o plugin de cleartext | instale `cordova-plugin-enable-cleartext-traffic` e rode `dvb build` |
 | Mudou plugin nativo, `config.xml`, ícone ou permissão e nada mudou | essas coisas vivem no APK, não no `www/` | `dvb build` |

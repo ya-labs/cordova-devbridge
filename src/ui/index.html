@@ -234,7 +234,8 @@
   /* ---- logs ---- */
   .logs { flex: none; display: flex; flex-direction: column; height: var(--logs-h, 240px); min-height: 0; background: var(--surface); border-top: 1px solid var(--line); position: relative; }
   .logs.collapsed { height: 42px !important; }
-  .logs.collapsed #logs { display: none; }
+  .logs.collapsed #logs, .logs.collapsed #net { display: none; }
+  .logs[data-tab="logs"] [data-for="net"], .logs[data-tab="net"] [data-for="logs"] { display: none !important; }
   .resizer { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 2; }
   .resizer::after { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 3px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); opacity: 0; transition: opacity .15s; }
   .resizer:hover::after, .logs.resizing .resizer::after { opacity: 1; }
@@ -242,6 +243,10 @@
   .logs-head { display: flex; align-items: center; gap: 8px; padding: 0 10px 0 14px; height: 42px; flex: none; border-bottom: 1px solid var(--line); }
   .logs-head h2 { margin: 0; font-size: 13px; font-weight: 650; display: flex; align-items: center; gap: 8px; }
   .logs-head h2 .count.err { background: var(--danger-soft); color: var(--danger); }
+  .tabs { display: flex; gap: 2px; }
+  .tab { border: 0; background: transparent; color: var(--muted); font: inherit; padding: 5px 9px; border-radius: 7px; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+  .tab:hover { color: var(--text); background: var(--surface-2); }
+  .tab.on { color: var(--text); background: var(--surface-3); }
   .logs-head .switch { font-size: 12.5px; color: var(--muted); }
   .logs-head .switch input:checked + .track { background: var(--accent); border-color: var(--accent); }
   .logs-head .field { height: 28px; font-size: 12.5px; }
@@ -279,7 +284,27 @@
   .line:hover .jt .copy { opacity: 1; }
   .jt .copy:hover { color: var(--accent); border-color: var(--accent); }
   #logs .line.error .msg .jt, #logs .line.error .msg .jt .row { color: var(--text); }
-  #logs .placeholder { padding: 10px 14px; color: var(--faint); font: 12.5px var(--sans); }
+  #logs .placeholder, #net .placeholder { padding: 10px 14px; color: var(--faint); font: 12.5px var(--sans); }
+  /* rede */
+  #net { flex: 1; overflow: auto; margin: 0; padding: 6px 0; font: 12px/1.55 var(--mono); }
+  #net .req { display: grid; grid-template-columns: 62px 54px 58px 64px 1fr; gap: 8px; padding: 1px 14px; cursor: pointer; }
+  #net .req:hover, #net .req.open { background: var(--surface-2); }
+  #net .req.fail { background: var(--danger-soft); }
+  #net .t, #net .ms { color: var(--faint); }
+  #net .ms { text-align: right; }
+  #net .m { font-weight: 600; }
+  #net .url { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #net .st { font: 600 10px/18px var(--sans); text-align: center; border-radius: 4px; height: 18px; margin-top: 1px; background: var(--ok-soft); color: var(--ok); }
+  #net .req.fail .st { background: var(--danger); color: #fff; }
+  #net .req.pend .st { background: var(--surface-3); color: var(--muted); }
+  #net .det { padding: 6px 14px 12px 84px; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }
+  #net .det:hover .jt .copy { opacity: 1; }
+  #net .det h4 { margin: 10px 0 4px; font: 600 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  #net .det .meta { color: var(--muted); font-family: var(--sans); }
+  #net .det .hk { color: var(--j-key); }
+  #net .det .note { color: var(--faint); font-family: var(--sans); font-style: italic; }
+  #net .det .err { color: var(--danger); }
+  .logs-head input.field { width: 200px; }
 
   @media (max-width: 900px) {
     header { flex-wrap: wrap; }
@@ -368,15 +393,22 @@
         <button class="icon-btn" id="toggleLogs" title="Recolher / expandir">
           <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>
         </button>
-        <h2>Console do app <span class="count" id="logCount">0</span></h2>
+        <h2 class="tabs">
+          <button class="tab" data-tab="logs">Console do app <span class="count" id="logCount">0</span></button>
+          <button class="tab" data-tab="net">Rede <span class="count" id="netCount">0</span></button>
+        </h2>
         <span class="spacer"></span>
-        <select id="level" class="field" title="Filtrar por nível"><option value="">Todos</option><option value="warn,error">Avisos e erros</option><option value="error">Só erros</option></select>
+        <select id="level" class="field" data-for="logs" title="Filtrar por nível"><option value="">Todos</option><option value="warn,error">Avisos e erros</option><option value="error">Só erros</option></select>
+        <input type="text" id="netUrl" class="field hide-sm" data-for="net" placeholder="Filtrar URL" autocomplete="off" spellcheck="false">
+        <label class="switch" data-for="net" title="Só status >= 400, sem resposta ou erro de rede"><input type="checkbox" id="netFailed"><span class="track"></span><span class="hide-sm">Só falhas</span></label>
+        <label class="switch" data-for="net" title="Inclui requisições ao próprio servidor de desenvolvimento (templates, js)"><input type="checkbox" id="netLocal"><span class="track"></span><span class="hide-sm">Locais</span></label>
         <label class="switch" title="Rolar automaticamente para o fim"><input type="checkbox" id="follow" checked><span class="track"></span><span class="hide-sm">Seguir</span></label>
         <button class="btn ghost" id="clearLogs" title="Limpar a lista (não apaga do servidor)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>Limpar
         </button>
       </div>
-      <div id="logs"><div class="placeholder">Aguardando logs do app…</div></div>
+      <div id="logs" data-for="logs"><div class="placeholder">Aguardando logs do app…</div></div>
+      <div id="net" data-for="net"><div class="placeholder">Aguardando requisições do app…</div></div>
     </section>
   </div>
 </main>
@@ -890,6 +922,152 @@
     }).catch(function () {});
   }
 
+  // ---- rede ----
+  // Uma linha por chamada; a mesma chamada volta com seq novo quando termina e
+  // a linha é atualizada no lugar. O detalhe vem sob demanda (/network/entry).
+  var net = { since: 0, items: {}, rows: {}, dets: {} };
+  function netFailed(e) { return e.state === 'error' || (e.state === 'done' && (e.status >= 400 || e.status <= 0)); }
+  function fmtSize(n) { return n === null || n === undefined ? '-' : n < 1024 ? n + ' B' : (n / 1024).toFixed(1) + ' KB'; }
+
+  function netQuery() {
+    var q = [];
+    var url = $('netUrl').value.trim();
+    if (url) q.push('url=' + encodeURIComponent(url));
+    if ($('netFailed').checked) q.push('failed=1');
+    if ($('netLocal').checked) q.push('local=1');
+    return q.length ? '&' + q.join('&') : '';
+  }
+
+  function updateNetCount() {
+    var ids = Object.keys(net.items);
+    var fails = ids.filter(function (id) { return netFailed(net.items[id]); }).length;
+    var c = $('netCount');
+    c.textContent = fails ? ids.length + ' · ' + fails + ' falha(s)' : ids.length;
+    c.className = 'count' + (fails ? ' err' : '');
+  }
+
+  function clearNet(text) {
+    $('net').innerHTML = '<div class="placeholder">' + text + '</div>';
+    net.items = {};
+    net.rows = {};
+    net.dets = {};
+    updateNetCount();
+  }
+
+  function renderNetRow(e) {
+    var row = net.rows[e.id];
+    if (!row) {
+      row = el('div', 'req');
+      row.onclick = function () { toggleNetDetail(e.id); };
+      net.rows[e.id] = row;
+      $('net').appendChild(row);
+    }
+    row.className = 'req' + (e.state === 'pending' ? ' pend' : netFailed(e) ? ' fail' : '') + (net.dets[e.id] ? ' open' : '');
+    row.innerHTML = '';
+    row.appendChild(el('span', 't', new Date(e.ts).toTimeString().slice(0, 8)));
+    row.appendChild(el('span', 'm', e.method));
+    row.appendChild(el('span', 'st', e.state === 'pending' ? '…' : e.state === 'error' ? 'erro' : String(e.status)));
+    row.appendChild(el('span', 'ms', e.ms === undefined || e.ms === null ? '' : e.ms + ' ms'));
+    var url = el('span', 'url', e.url);
+    row.title = e.url + (e.error ? '\n' + e.error : '') + '\n' + e.via + ' · pedido ' + fmtSize(e.reqSize) + ' · resposta ' + fmtSize(e.resSize);
+    row.appendChild(url);
+  }
+
+  function bodyNode(p) {
+    var box = el('div');
+    if (p.body === null || p.body === undefined || p.body === '') {
+      box.appendChild(el('span', 'note', '(sem corpo)'));
+      return box;
+    }
+    var parsed;
+    var isJson = false;
+    if (!p.truncated) {
+      try { parsed = JSON.parse(p.body); isJson = parsed !== null && typeof parsed === 'object'; } catch (e) { isJson = false; }
+    }
+    if (isJson) {
+      var t = tree(parsed, true);
+      t.firstChild.onclick();
+      box.appendChild(t);
+    } else {
+      box.appendChild(el('span', null, p.body));
+    }
+    if (p.truncated) box.appendChild(el('div', 'note', 'O app enviou só os primeiros ' + p.body.length + ' de ' + p.size + ' caracteres.'));
+    return box;
+  }
+
+  function partNode(title, p) {
+    var frag = document.createDocumentFragment();
+    frag.appendChild(el('h4', null, title + ' · ' + fmtSize(p.size)));
+    var keys = Object.keys(p.headers || {});
+    keys.forEach(function (k) {
+      var line = el('div');
+      line.appendChild(el('span', 'hk', k));
+      line.appendChild(document.createTextNode(': ' + p.headers[k]));
+      frag.appendChild(line);
+    });
+    if (keys.length) frag.appendChild(el('div', null, ' '));
+    frag.appendChild(bodyNode(p));
+    return frag;
+  }
+
+  function loadNetDetail(id) {
+    var det = net.dets[id];
+    api('GET', '/network/entry?id=' + id).then(function (e) {
+      if (net.dets[id] !== det) return;
+      det.innerHTML = '';
+      var meta = [e.via, 'rota ' + (e.href || '-'), e.state === 'pending' ? 'pendente' : (e.status + (e.statusText ? ' ' + e.statusText : ''))];
+      if (e.ms !== undefined && e.ms !== null) meta.push(e.ms + ' ms');
+      det.appendChild(el('div', 'meta', e.method + ' ' + e.url + '\n' + meta.join(' · ')));
+      if (e.error) det.appendChild(el('div', 'err', e.error));
+      det.appendChild(partNode('Pedido', e.request));
+      if (e.response) det.appendChild(partNode('Resposta', e.response));
+      else det.appendChild(el('h4', null, 'Resposta ainda não chegou'));
+    }).catch(function (err) {
+      det.textContent = err.message;
+    });
+  }
+
+  function toggleNetDetail(id) {
+    var row = net.rows[id];
+    if (net.dets[id]) {
+      net.dets[id].remove();
+      delete net.dets[id];
+      row.classList.remove('open');
+      return;
+    }
+    var det = el('div', 'det', 'Carregando…');
+    det.onclick = function (ev) { ev.stopPropagation(); };
+    net.dets[id] = det;
+    row.after(det);
+    row.classList.add('open');
+    loadNetDetail(id);
+  }
+
+  function pollNet() {
+    api('GET', '/network?since=' + net.since + netQuery()).then(function (r) {
+      net.since = r.last;
+      if (!r.entries.length) return;
+      var box = $('net');
+      var ph = box.querySelector('.placeholder');
+      if (ph) ph.remove();
+      r.entries.forEach(function (e) {
+        var known = !!net.items[e.id];
+        net.items[e.id] = e;
+        renderNetRow(e);
+        // Detalhe aberto de uma chamada que acabou de terminar: recarrega com a resposta.
+        if (known && net.dets[e.id]) loadNetDetail(e.id);
+      });
+      updateNetCount();
+      if ($('follow').checked && panel.dataset.tab === 'net') box.scrollTop = box.scrollHeight;
+    }).catch(function () {});
+  }
+
+  function resetNet() {
+    clearNet('Carregando…');
+    net.since = 0;
+    pollNet();
+  }
+
   // Painel de logs: altura arrastável e recolhível, lembradas entre visitas.
   var panel = $('logsPanel');
   function setLogsHeight(h) {
@@ -899,6 +1077,21 @@
     return h;
   }
   setLogsHeight(store('logsHeight') || 240);
+  function setTab(tab) {
+    panel.dataset.tab = tab;
+    Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) { b.classList.toggle('on', b.dataset.tab === tab); });
+    store('bottomTab', tab);
+  }
+  setTab(store('bottomTab') === 'net' ? 'net' : 'logs');
+  Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
+    b.onclick = function () {
+      setTab(b.dataset.tab);
+      if (panel.classList.contains('collapsed')) {
+        panel.classList.remove('collapsed');
+        store('logsCollapsed', false);
+      }
+    };
+  });
   if (store('logsCollapsed')) panel.classList.add('collapsed');
   $('toggleLogs').onclick = function () {
     panel.classList.toggle('collapsed');
@@ -949,7 +1142,14 @@
     w.focus();
   };
   $('level').onchange = function () { clearLogs('Carregando…'); state.logSince = 0; pollLogs(); };
-  $('clearLogs').onclick = function () { clearLogs('Lista limpa. Novos logs aparecem aqui.'); };
+  $('clearLogs').onclick = function () {
+    if (panel.dataset.tab === 'net') clearNet('Lista limpa. Novas requisições aparecem aqui.');
+    else clearLogs('Lista limpa. Novos logs aparecem aqui.');
+  };
+  var netUrlTimer = null;
+  $('netUrl').oninput = function () { clearTimeout(netUrlTimer); netUrlTimer = setTimeout(resetNet, 300); };
+  $('netFailed').onchange = resetNet;
+  $('netLocal').onchange = resetNet;
   document.addEventListener('keydown', function (ev) {
     var typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement && document.activeElement.tagName);
     if (ev.key === '/' && !typing) { ev.preventDefault(); $('filter').focus(); $('filter').select(); }
@@ -958,8 +1158,10 @@
   renderHistory();
   loadStatus();
   pollLogs();
+  pollNet();
   setInterval(loadStatus, 3000);
   setInterval(pollLogs, 1000);
+  setInterval(pollNet, 1000);
 })();
 </script>
 </body>

@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, logLine, table } = require('../src/format');
+const { sqlResult, logLine, table, networkLine, networkDetail } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const adb = require('../src/adb');
 
@@ -26,6 +26,9 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   reload                     recarrega o app
   logs [-f] [--level error,warn] [--since N]
                              console do app
+  network [-f] [--failed] [--local] [--url trecho] [--since N]
+                             requisições HTTP do app (XHR, fetch, advanced-http)
+  network <ID> [--json]      cabeçalhos e corpos de uma requisição
   sql "<SQL>" [--db X] [--params '[..]'] [--write] [--json] [--max N]
                              executa SQL no app rodando (leitura por padrão)
   tables [--db X]            lista tabelas
@@ -37,7 +40,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
@@ -119,6 +122,25 @@ async function cmdLogs(api, flags) {
   }
 }
 
+async function cmdNetwork(api, args) {
+  const { flags } = args;
+  if (args._[1]) {
+    const e = await api.networkEntry(args._[1]);
+    return console.log(flags.json ? JSON.stringify(e, null, 2) : networkDetail(e, { maxBody: Infinity }));
+  }
+  const query = { url: flags.url, failed: flags.failed, local: flags.local };
+  let since = Number(flags.since || 0);
+  const first = await api.network({ ...query, since, limit: flags.follow ? 50 : 500 });
+  first.entries.forEach((e) => console.log(networkLine(e)));
+  since = first.last;
+  while (flags.follow) {
+    await sleep(500);
+    const r = await api.network({ ...query, since });
+    r.entries.forEach((e) => console.log(networkLine(e)));
+    since = r.last;
+  }
+}
+
 async function cmdSql(api, args) {
   const sql = args._.slice(1).join(' ');
   if (!sql) throw new Error('Informe o SQL: devbridge sql "select ..."');
@@ -183,6 +205,8 @@ async function main() {
     }
     case 'logs':
       return cmdLogs(api, args.flags);
+    case 'network':
+      return cmdNetwork(api, args);
     case 'sql':
       return cmdSql(api, args);
     case 'tables': {
