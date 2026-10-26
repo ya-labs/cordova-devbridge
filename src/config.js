@@ -10,7 +10,6 @@ const DEFAULTS = {
   www: 'www',
   platformWww: 'platforms/android/platform_www',
   cordova: 'cordova',
-  allowWrites: false,
   reloadKeepRoute: true,
   reloadRestore: null,
   networkMask: true,

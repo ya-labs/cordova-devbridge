@@ -573,6 +573,59 @@
     });
   }
 
+  // ---- eval -------------------------------------------------------------
+  // Eval indireto: roda no escopo global, fora do modo estrito do client.
+  // Resultado thenable é esperado até timeoutMs; código síncrono não tem como parar.
+  function kindOf(v) {
+    if (v === null) return 'null';
+    if (isError(v)) return 'error';
+    if (Object.prototype.toString.call(v) === '[object Array]') return 'array';
+    return typeof v;
+  }
+
+  // A stack para no runEval: dali para baixo são frames do client (canal SSE),
+  // que não dizem nada a quem avaliou. Frames do app chamados pela expressão ficam acima.
+  function errorText(e) {
+    if (!isError(e)) return 'Rejeitada com: ' + serialize(e);
+    var lines = String(e.stack || (e.name + ': ' + e.message)).split('\n');
+    for (var i = 1; i < lines.length; i++) {
+      if (/^\s*at runEval\b/.test(lines[i])) return lines.slice(0, i).join('\n');
+    }
+    return lines.join('\n');
+  }
+
+  function runEval(req, reply) {
+    var started = Date.now();
+    var awaited = false;
+    var timer = null;
+    var done = false;
+    function finish(ok, value, err) {
+      if (done) return;
+      done = true;
+      clearTimeout(timer);
+      if (!ok) return reply(false, null, err);
+      reply(true, { value: cloneArg(value, [], { n: 0 }, 0), type: kindOf(value), awaited: awaited, ms: Date.now() - started });
+    }
+    var value;
+    try {
+      value = (0, eval)(req.expression);
+    } catch (e) {
+      return finish(false, null, errorText(e));
+    }
+    if (value && typeof value.then === 'function') {
+      awaited = true;
+      var limit = req.timeoutMs || 10000;
+      timer = setTimeout(function () { finish(false, null, 'A promessa não resolveu em ' + limit / 1000 + ' s.'); }, limit);
+      try {
+        value.then(function (v) { finish(true, v); }, function (e) { finish(false, null, errorText(e)); });
+      } catch (e) {
+        finish(false, null, errorText(e));
+      }
+      return;
+    }
+    finish(true, value);
+  }
+
   // ---- canal com o servidor --------------------------------------------
   function replyFor(id) {
     return function (ok, result, error, code) {
@@ -632,6 +685,14 @@
       var req = JSON.parse(ev.data);
       try {
         runSql(req, replyFor(req.id));
+      } catch (e) {
+        replyFor(req.id)(false, null, e.message || String(e));
+      }
+    });
+    es.addEventListener('eval', function (ev) {
+      var req = JSON.parse(ev.data);
+      try {
+        runEval(req, replyFor(req.id));
       } catch (e) {
         replyFor(req.id)(false, null, e.message || String(e));
       }

@@ -14,8 +14,8 @@ const { RESTORE_TAG } = require('../src/static');
 
 const silent = { log() {} };
 
-async function setup({ allowWrites = false, globals, listDatabases, extraConfig, screencap } = {}) {
-  const root = makeApp({ allowWrites, ...extraConfig });
+async function setup({ globals, listDatabases, extraConfig, screencap } = {}) {
+  const root = makeApp(extraConfig);
   const config = loadConfig({ cwd: root });
   const server = new DevServer(config, {
     logger: silent,
@@ -118,17 +118,11 @@ test('padrão ambíguo pede --db explícito', async () => {
   }
 });
 
-test('escrita: recusada sem flag, sem allowWrites, e liberada com os dois (com histórico)', async () => {
-  const off = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
+test('escrita: recusada sem pedido explícito e liberada com ele, sem opção na config (com histórico)', async () => {
+  const on = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
   try {
-    await assert.rejects(off.api.sql({ sql: 'delete from CLIENTES', db: 'user' }), /recusada/);
-    await assert.rejects(off.api.sql({ sql: 'delete from CLIENTES', db: 'user', write: true }), /allowWrites/);
-  } finally {
-    await teardown(off);
-  }
-
-  const on = await setup({ allowWrites: true, globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
-  try {
+    await assert.rejects(on.api.sql({ sql: 'delete from CLIENTES', db: 'user' }), /recusada/);
+    assert.equal(on.data['User_joao1.db'].CLIENTES.length, 2);
     const r = await on.api.sql({ sql: 'update CLIENTES set NOME = ? where rowid = ?', params: ['Novo', 2], db: 'user', write: true });
     assert.equal(r.rowsAffected, 1);
     assert.equal(on.data['User_joao1.db'].CLIENTES[1].NOME, 'Novo');
@@ -250,7 +244,7 @@ test('aba do PC conectada depois não rouba o app que já disparou deviceready',
 });
 
 test('console: INSERT e DELETE por rowid que a grade envia passam só com escrita', async () => {
-  const s = await setup({ allowWrites: true, globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
+  const s = await setup({ globals: (p) => ({ db: p.makeDb('User_joao1.db') }) });
   try {
     const ins = 'INSERT INTO "CLIENTES" ("CODIGO", "NOME") VALUES (?, ?)';
     await assert.rejects(s.api.sql({ sql: ins, params: ['30', 'Mercado C'], db: 'user' }), /recusada/);

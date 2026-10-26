@@ -49,7 +49,7 @@ function checkSql(sql, { write }) {
   if (typeof sql !== 'string' || !sql.trim()) return 'SQL vazio.';
   if (!isSingleStatement(sql)) return 'Envie uma instrução por vez (sem ";" no meio).';
   if (!write && !isReadOnly(sql)) {
-    return 'Instrução de escrita recusada. Use --write (CLI) ou db_exec (MCP), com "allowWrites": true na config.';
+    return 'Instrução de escrita recusada. Use --write (CLI) ou db_exec (MCP).';
   }
   return null;
 }

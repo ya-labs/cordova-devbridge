@@ -26,7 +26,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
 | `src/ui/index.html` | console web autocontido (sem CDN) |
 | `docs/MANUAL.md` | instalação e configuração de um app do zero, na ordem dos passos; solução de problemas. Mantenha em sincronia com o README e o código |
-| `test/` | `units`, `e2e` (o client real em `node:vm`), `network` (wrappers de rede no vm contra um backend falso), `mcp` (processo real por stdio) e `devbuild` (decisão de abrir o app) |
+| `test/` | `units`, `e2e` (o client real em `node:vm`), `network` (wrappers de rede no vm contra um backend falso), `eval` (eval no vm e `app_eval` por stdio), `mcp` (processo real por stdio) e `devbuild` (decisão de abrir o app) |
 
 ## Decisões (não reverter sem motivo)
 
@@ -38,7 +38,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Client na ignore list do DevTools.** O wrapper de `console.*` faria todo log apontar para a linha dele no `chrome://inspect`. O servidor acrescenta `//# sourceMappingURL=/__devbridge/client.js.map` ao `client.js` e gera um map de identidade com `x_google_ignoreList`. Com isso o DevTools pula os frames do client e linka a linha do app.
 - **Segurança do banco:**
   - a leitura é o padrão;
-  - a escrita exige `allowWrites` na config **e** um pedido explícito (`--write`, `db_exec` ou o checkbox da UI);
+  - a escrita exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox da UI). Não há trava na config: `allowWrites` foi removido a pedido da pessoa (#9), por ser ferramenta de desenvolvimento num aparelho de teste;
   - a leitura roda em `readTransaction`, então o próprio plugin recusa escrita;
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
@@ -52,6 +52,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
   - cada chamada gera `start` e `end`; o servidor dá um `seq` novo a cada mudança, então `since` traz também as que terminaram depois;
   - corpo cortado em 32 KB no app; 500 entradas no servidor; requisições locais que deram certo ficam fora da lista por padrão;
   - `networkMask` (padrão `true`) mascara credenciais por regex, e não por parse, porque o corpo pode chegar cortado.
+- **Eval no app (#9):** sempre disponível (o `allowEval` foi removido junto com o `allowWrites`, a pedido da pessoa). O client usa eval indireto `(0, eval)(expr)`, que roda no escopo global e fora do `'use strict'` do client. Resultado thenable é esperado até `timeoutMs` (100 ms a 120 s); o servidor espera 2 s a mais para o timeout do app chegar primeiro. O valor volta pela mesma cópia JSON dos logs (`cloneArg`); toda expressão vai para `.devbridge/eval-history.log`. Código síncrono não tem como ser interrompido: um laço infinito trava o app. A stack de erro é cortada no frame `at runEval`, porque o que vem abaixo é o canal do client. O console web tem um prompt no rodapé do painel de logs, que chama a mesma API; o resultado é uma linha local (não conta como log do app). Ele fica no painel que já existia, e não numa aba, para não depender das abas da #8.
 - **Espelho da tela sem dependência:** sem scrcpy/ffmpeg, o espelho é feito com `adb exec-out screencap -p` (~0,6 s por quadro no aparelho). Três capturas em paralelo dão ~4,7 qps (medido; 4 dão ~5,4, mas pesam mais no app em teste). Capturas terminam fora de ordem, então só se publica quadro de captura iniciada depois da que gerou o último (contador, não relógio). A janela pede por long-poll na API (com `X-Devbridge`); sem pedidos por 4 s os workers param, e a janela para de pedir quando fica oculta.
 - **Client ativo:** com mais de um client conectado, o servidor escolhe o mais recente entre os que dispararam `deviceready` (`readyClients`, guardado por id para sobreviver à reconexão do EventSource). Uma aba do PC em `localhost:8100/` também carrega o client, mas nunca dispara `deviceready`; antes disso, ela roubava SQL e status do celular.
 - **Navegador de PC em `/` ou `/index.html` vai para `/__devbridge/` (302)**, a menos que use `?app`. A aba do app travava no `prompt()` do `cordova.js` e, por dividir o processo do Chrome com as outras abas do mesmo site, travava também o console. Navegador de PC é `Mozilla` sem `Android`; o fetch do Node passa direto.
@@ -140,7 +141,7 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 
 Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste em branch de issue e atualize esta seção.
 
-**Critério das features novas:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral segue a trava do banco (opção na config + histórico em `.devbridge/`). Backlog nesse critério: #8 a #14 (`gh issue list`).
+**Critério das features novas:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral não ganha opção na config (as travas `allowWrites`/`allowEval` foram removidas na #9): exige pedido explícito por chamada e fica em histórico em `.devbridge/`. Backlog nesse critério: #8 a #14 (`gh issue list`).
 
 **Ideias registradas, fora do escopo atual:** suporte a iOS, Wi-Fi como alternativa ao `adb reverse` e teste automatizado de clique na UI.
 

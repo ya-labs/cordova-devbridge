@@ -6,7 +6,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android:
 - **Banco em tempo real:** SQL contra o SQLite do app rodando, pelo terminal (`devbridge sql`) ou pelo **console web** (`http://localhost:8100/__devbridge/`). O console tem lista de tabelas, grade editável, histórico e logs ao vivo.
 - **Console do app no PC:** os `console.*` e erros não tratados do app aparecem no terminal e no console web.
 - **Inspetor de rede:** as requisições do app ao backend (XHR, `fetch` e `cordova-plugin-advanced-http`), com status, duração, cabeçalhos e corpos, no terminal, no console web e no MCP.
-- **MCP para agentes de IA:** o Claude Code ou o Codex podem recarregar o app, ler logs e requisições, consultar o banco e tirar screenshot sozinhos.
+- **MCP para agentes de IA:** o Claude Code ou o Codex podem recarregar o app, ler logs e requisições, consultar o banco, avaliar JavaScript no app e tirar screenshot sozinhos.
 
 Não tem dependências: é Node 20+ puro, mais o `adb`.
 
@@ -49,7 +49,6 @@ Exemplo com dois bancos: um por usuário (o nome tem `*`) e um de configuração
 {
   "package": "com.exemplo.meuapp",
   "port": 8100,
-  "allowWrites": true,
   "defaultDb": "user",
   "databases": {
     "user": { "global": "db", "name": "MeuApp_*.db" },
@@ -67,7 +66,6 @@ Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 | `databases.<alias>.global` | variável global onde o app guarda a conexão aberta |
 | `databases.<alias>.name` | arquivo usado em `sqlitePlugin.openDatabase`; aceita `*` |
 | `defaultDb` | alias usado quando `--db` não é informado |
-| `allowWrites` | libera `--write`, o `db_exec` do MCP e a edição da grade (padrão `false`) |
 | `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
 | `networkMask` | `true` (padrão): no inspetor de rede, `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key` e campos com senha/password/token/secret (JSON, formulário, query e XML) aparecem como `***`. `false` mostra os valores como vieram |
 | `reloadRestore` | script do app (fora do `www/`) que guarda o estado antes do reload e volta para a tela depois do boot; implica reload pela rota inicial |
@@ -120,6 +118,8 @@ devbridge sql "select * from parametros" --db config
 devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
 devbridge tables
 devbridge schema pedidos
+devbridge eval "location.hash"                     # JavaScript no app
+devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
 devbridge screenshot
 ```
@@ -133,15 +133,18 @@ Ctrl+Enter executa o SQL.
 
 **Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo, e o servidor guarda as 500 requisições mais recentes.
 
+**JavaScript no app:** o rodapé do painel "Console do app" tem uma linha de comando, como a do DevTools. Enter executa, Shift+Enter quebra linha e ↑/↓ percorrem as expressões anteriores. A expressão e o resultado entram na lista de logs, com objetos expansíveis e erros em vermelho. Usa a mesma API do `app_eval`, então tudo vai para o `.devbridge/eval-history.log`.
+
 **Tela ao vivo:** o botão "Tela" do console abre `http://localhost:8100/__devbridge/mirror` numa janela separada, espelhando o celular (cerca de 4 a 5 quadros por segundo, por `adb screencap`). Espaço pausa; o botão de download salva o quadro atual em PNG. A captura só roda enquanto a janela está aberta e visível.
 
 No PC, a raiz `http://localhost:8100/` redireciona para o console. O app em si trava no Chrome do PC, porque o `cordova.js` usa `prompt()` como ponte nativa, e essa aba travada derruba junto as outras abas do mesmo site. Para abrir o app mesmo assim, use `/?app`. Mesmo com essa aba aberta, SQL e status continuam indo para o celular, porque o servidor prefere o client que disparou `deviceready`.
 
 **Segurança:**
-- Leitura é o padrão. A escrita exige `allowWrites` **e** um pedido explícito (`--write`, `db_exec` ou o checkbox).
+- Leitura é o padrão. A escrita exige um pedido explícito (`--write`, `db_exec` ou o checkbox "Escrita"); não há opção na config para ligá-la.
 - Leituras rodam em `readTransaction`, então o próprio plugin recusa escrita.
 - Uma instrução por chamada.
 - Toda escrita fica em `.devbridge/sql-history.log`.
+- O eval de JavaScript está sempre disponível, e toda expressão fica em `.devbridge/eval-history.log`. Ele roda com os mesmos poderes do app: pode alterar o estado, e um laço infinito trava o app (o timeout só vale para promessas).
 - O servidor só escuta em `127.0.0.1`.
 - A API exige o header `X-Devbridge`, o que bloqueia CSRF de outras páginas abertas no navegador.
 
@@ -162,7 +165,8 @@ Ferramentas expostas:
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
-- `db_exec`, só com `allowWrites`
+- `app_eval`
+- `db_exec` (escrita)
 
 O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `app_network` / `db_query` / `app_screenshot` para validar.
 

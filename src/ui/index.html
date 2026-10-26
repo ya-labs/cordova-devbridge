@@ -234,7 +234,7 @@
   /* ---- logs ---- */
   .logs { flex: none; display: flex; flex-direction: column; height: var(--logs-h, 240px); min-height: 0; background: var(--surface); border-top: 1px solid var(--line); position: relative; }
   .logs.collapsed { height: 42px !important; }
-  .logs.collapsed #logs, .logs.collapsed #net { display: none; }
+  .logs.collapsed #logs, .logs.collapsed #net, .logs.collapsed .prompt { display: none; }
   .logs[data-tab="logs"] [data-for="net"], .logs[data-tab="net"] [data-for="logs"] { display: none !important; }
   .resizer { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 2; }
   .resizer::after { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 3px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); opacity: 0; transition: opacity .15s; }
@@ -305,6 +305,16 @@
   #net .det .note { color: var(--faint); font-family: var(--sans); font-style: italic; }
   #net .det .err { color: var(--danger); }
   .logs-head input.field { width: 200px; }
+  /* JavaScript no app: expressão e resultado entram na lista de logs */
+  #logs .line.eval-in .msg { color: var(--muted); }
+  #logs .line.eval-in .lv, #logs .line.eval-out .lv { background: transparent; color: var(--accent); font: 700 13px/18px var(--mono); }
+  #logs .line.eval-out.error .lv { background: var(--danger); color: #fff; font: 600 10px/18px var(--sans); }
+  .prompt { flex: none; display: flex; align-items: flex-start; gap: 8px; padding: 6px 14px; border-top: 1px solid var(--line); font: 12px/1.55 var(--mono); background: var(--surface); }
+  .prompt .caret { color: var(--accent); font-weight: 700; width: 12px; }
+  .prompt textarea { flex: 1; border: 0; outline: 0; resize: none; background: transparent; color: var(--text); font: inherit; padding: 0; height: 18px; max-height: 140px; overflow-y: auto; }
+  .prompt textarea::placeholder { color: var(--faint); }
+  .prompt.busy .caret { animation: pulse 1s ease-in-out infinite; }
+  @keyframes pulse { 50% { opacity: .25; } }
 
   @media (max-width: 900px) {
     header { flex-wrap: wrap; }
@@ -408,6 +418,10 @@
         </button>
       </div>
       <div id="logs" data-for="logs"><div class="placeholder">Aguardando logs do app…</div></div>
+      <div class="prompt" id="evalBox" data-for="logs">
+        <span class="caret">›</span>
+        <textarea id="evalInput" rows="1" spellcheck="false" autocomplete="off" placeholder="JavaScript no app · Enter executa · Shift+Enter quebra linha · ↑ anterior"></textarea>
+      </div>
       <div id="net" data-for="net"><div class="placeholder">Aguardando requisições do app…</div></div>
     </section>
   </div>
@@ -494,11 +508,6 @@
         $('db').innerHTML = dbs.map(function (d) { return '<option>' + d + '</option>'; }).join('');
         var saved = store('db');
         $('db').value = dbs.indexOf(saved) >= 0 ? saved : (s.server.defaultDb || dbs[0] || '');
-        if (!s.server.allowWrites) {
-          $('write').disabled = true;
-          $('writeLabel').classList.add('disabled');
-          $('writeLabel').title = 'Desligada: defina "allowWrites": true no devbridge.config.json';
-        }
         loadTables();
       }
     }).catch(function () {
@@ -1067,6 +1076,83 @@
     net.since = 0;
     pollNet();
   }
+
+  // ---- JavaScript no app ----
+  // Mesma API do MCP e da CLI (POST /eval): o histórico vale igual.
+  // O resultado entra na lista de logs, sem contar como log do app.
+  var evalHist = store('evalHistory') || [];
+  var evalPos = evalHist.length;
+
+  function addLocalLine(cls, label, content, title) {
+    var box = $('logs');
+    var ph = box.querySelector('.placeholder');
+    if (ph) ph.remove();
+    var line = el('div', 'line ' + cls);
+    if (title) line.title = title;
+    line.appendChild(el('span', 't', new Date().toTimeString().slice(0, 8)));
+    line.appendChild(el('span', 'lv', label));
+    var msg = el('span', 'msg');
+    msg.appendChild(content);
+    line.appendChild(msg);
+    box.appendChild(line);
+    box.scrollTop = box.scrollHeight;
+  }
+
+  function fitEval() {
+    var t = $('evalInput');
+    t.style.height = '18px';
+    t.style.height = Math.min(t.scrollHeight, 140) + 'px';
+  }
+
+  function runEval() {
+    var input = $('evalInput');
+    var expr = input.value;
+    if (!expr.trim() || $('evalBox').classList.contains('busy')) return;
+    if (evalHist[evalHist.length - 1] !== expr) evalHist.push(expr);
+    if (evalHist.length > 50) evalHist = evalHist.slice(-50);
+    store('evalHistory', evalHist);
+    evalPos = evalHist.length;
+    input.value = '';
+    fitEval();
+    addLocalLine('eval-in', '›', el('span', null, expr));
+    $('evalBox').classList.add('busy');
+    api('POST', '/eval', { expression: expr }).then(function (r) {
+      var node;
+      if (isTree(r.value)) {
+        node = tree(r.value, true);
+        node.firstChild.onclick();
+      } else {
+        node = leaf(r.value, true);
+      }
+      addLocalLine('eval-out', '‹', node, r.type + ' · ' + r.ms + ' ms' + (r.awaited ? ' · promessa resolvida' : ''));
+    }).catch(function (e) {
+      addLocalLine('eval-out error', 'erro', el('span', null, e.message));
+    }).then(function () {
+      $('evalBox').classList.remove('busy');
+      input.focus();
+    });
+  }
+
+  $('evalInput').onkeydown = function (ev) {
+    var t = ev.target;
+    if (ev.key === 'Enter' && !ev.shiftKey) {
+      ev.preventDefault();
+      return runEval();
+    }
+    // ↑/↓ só navegam no histórico com o cursor na primeira/última linha.
+    var before = t.value.slice(0, t.selectionStart);
+    var after = t.value.slice(t.selectionEnd);
+    if (ev.key === 'ArrowUp' && before.indexOf('\n') < 0 && evalPos > 0) {
+      ev.preventDefault();
+      t.value = evalHist[--evalPos];
+      fitEval();
+    } else if (ev.key === 'ArrowDown' && after.indexOf('\n') < 0 && evalPos < evalHist.length) {
+      ev.preventDefault();
+      t.value = ++evalPos < evalHist.length ? evalHist[evalPos] : '';
+      fitEval();
+    }
+  };
+  $('evalInput').oninput = fitEval;
 
   // Painel de logs: altura arrastável e recolhível, lembradas entre visitas.
   var panel = $('logsPanel');
