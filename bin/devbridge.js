@@ -8,9 +8,10 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const { splitSql } = require('../src/sqlguard');
+const { createSnapshot, restoreSnapshot, listSnapshots } = require('../src/snapshot');
 const adb = require('../src/adb');
 
 const HELP = `cordova-devbridge — live reload e SQLite do app Cordova no celular (USB/adb)
@@ -43,6 +44,9 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   schema <TABELA> [--db X]   colunas e índices
   pull-db [--db X] [--out DIR]
                              copia o .db do aparelho (adb run-as) para abrir no PC
+  db-snapshot <NOME> [--db X] salva os bancos do app em .devbridge/snapshots/<NOME>
+  db-restore <NOME>          volta os bancos ao snapshot (fecha e reabre o app)
+  db-snapshots               lista os snapshots
   screenshot [--out arq.png] captura a tela do celular
   mcp                        servidor MCP (stdio) para agentes de IA
 
@@ -250,6 +254,22 @@ async function main() {
     }
     case 'pull-db':
       return cmdPullDb(config, args.flags);
+    case 'db-snapshot':
+    case 'db-restore': {
+      // Sem servidor: reabre só se o start estiver no ar (APK dev sem servidor fica na tela de erro).
+      const deps = {
+        listDatabases: adb.listDatabases,
+        readAppFile: adb.readAppFile,
+        writeAppFile: adb.writeAppFile,
+        removeAppFile: adb.removeAppFile,
+        forceStop: adb.forceStop,
+        reopen: () => launchIfServerUp(config, { log: () => {} }),
+      };
+      const fn = cmd === 'db-snapshot' ? createSnapshot : restoreSnapshot;
+      return console.log(snapshotResult(await fn(config, { name: args._[1], db: args.flags.db }, deps)));
+    }
+    case 'db-snapshots':
+      return console.log(snapshotList(listSnapshots(config)));
     case 'screenshot': {
       const png = await adb.screencap();
       const out = path.resolve(args.flags.out || path.join(config.stateDir, `screenshot-${Date.now()}.png`));

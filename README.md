@@ -126,6 +126,9 @@ devbridge go /pedidos/12                           # leva o app à rota e mostra
 devbridge eval "location.hash"                     # JavaScript no app
 devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
+devbridge db-snapshot antes-do-pedido              # salva os bancos do app (fecha e reabre o app)
+devbridge db-restore antes-do-pedido               # volta os bancos a esse ponto
+devbridge db-snapshots
 devbridge screenshot
 ```
 
@@ -174,6 +177,7 @@ Ferramentas expostas:
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
+- `db_snapshot`, `db_restore` e `db_snapshots` (salvar e voltar o estado dos bancos para repetir um teste)
 - `app_storage` (localStorage, sessionStorage e NativeStorage: lista, lê, grava e apaga)
 - `app_navigate` (leva o app a uma rota e diz se ele redirecionou)
 - `app_eval`

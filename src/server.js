@@ -8,9 +8,10 @@ const crypto = require('node:crypto');
 
 const { resolveFile, injectClient, mimeOf, withSourceMap, ignoreListMap, CLIENT_MAP_URL } = require('./static');
 const { checkSql } = require('./sqlguard');
-const { resolveDatabase } = require('./config');
+const { resolveDatabase, globToRegExp } = require('./config');
 const adb = require('./adb');
 const { Mirror } = require('./mirror');
+const { createSnapshot, restoreSnapshot, listSnapshots } = require('./snapshot');
 const { NetworkLog } = require('./network');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
@@ -18,23 +19,29 @@ const UI_DIR = path.join(__dirname, 'ui');
 const MAX_LOGS = 5000;
 const IGNORED = /(^|[\\/])(\.[^\\/]*|node_modules)([\\/]|$)|(~|\.swp|\.swx|\.tmp)$/;
 
-function globToRegExp(glob) {
-  return new RegExp('^' + glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
-}
-
 // Navegador de PC: Mozilla sem Android. O WebView do app traz "Android" e o fetch do Node não traz "Mozilla".
 function isDesktopBrowser(ua) {
   return /Mozilla/.test(ua || '') && !/Android/i.test(ua || '');
 }
 
 class DevServer {
-  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {} } = {}) {
+  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {}, snapshotDeps = {} } = {}) {
     this.config = config;
     this.screencap = screencap;
     this.mirror = new Mirror({ capture: () => this.screencap(), ...mirror });
     this.logger = logger;
     this.watchEnabled = watch;
     this.listDatabases = listDatabases;
+    // O servidor está no ar, então reabrir o app é só lançá-lo: ele reconecta sozinho.
+    this.snapshotDeps = {
+      listDatabases,
+      readAppFile: adb.readAppFile,
+      writeAppFile: adb.writeAppFile,
+      removeAppFile: adb.removeAppFile,
+      forceStop: adb.forceStop,
+      reopen: () => adb.launch(config.package).then(() => true, () => false),
+      ...snapshotDeps,
+    };
     this.boot = crypto.randomBytes(4).toString('hex');
     this.clients = new Map();
     this.readyClients = new Set();
@@ -245,6 +252,10 @@ class DevServer {
     await fsp.appendFile(path.join(this.config.stateDir, 'sql-history.log'), line + '\n');
   }
 
+  snapshot(opts) { return createSnapshot(this.config, opts, this.snapshotDeps); }
+  restore(opts) { return restoreSnapshot(this.config, opts, this.snapshotDeps); }
+  snapshots() { return listSnapshots(this.config); }
+
   // Ação padrão: get com chave, list sem. set/remove ficam no histórico.
   async storage({ area, action, key, value } = {}) {
     if (!['local', 'session', 'native'].includes(area)) throw new Error('Área inválida: use local, session ou native.');
@@ -389,6 +400,12 @@ class DevServer {
           return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
+        case 'GET /snapshots':
+          return this.json(res, 200, this.snapshots());
+        case 'POST /snapshot':
+          return this.json(res, 200, await this.snapshot(await readJson(req)));
+        case 'POST /restore':
+          return this.json(res, 200, await this.restore(await readJson(req)));
         case 'POST /storage':
           return this.json(res, 200, await this.storage(await readJson(req)));
         case 'POST /navigate':
