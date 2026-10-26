@@ -33,4 +33,60 @@ function logLine(e) {
   return `${t} ${e.level.toUpperCase().padEnd(5)} ${e.msg}`;
 }
 
-module.exports = { table, sqlResult, logLine };
+function size(n) {
+  if (n === null || n === undefined) return '-';
+  return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+}
+
+function netStatus(e) {
+  if (e.state === 'pending') return 'pendente';
+  if (e.state === 'error') return `ERRO ${e.status || ''}`.trim();
+  return String(e.status);
+}
+
+// Uma linha por chamada: o id leva ao detalhe (network <id> / app_network_entry).
+function networkLine(e) {
+  const t = new Date(e.ts).toTimeString().slice(0, 8);
+  const ms = e.ms === undefined || e.ms === null ? '' : ` ${e.ms} ms`;
+  const err = e.error ? ` (${e.error})` : '';
+  return `#${e.id} ${t} ${e.method} ${netStatus(e)}${ms} ${e.url} [${e.via}, req ${size(e.reqSize)}, res ${size(e.resSize)}]${err}`;
+}
+
+function bodyText(p, maxBody) {
+  if (p.body === null || p.body === undefined || p.body === '') return '(sem corpo)';
+  let body = p.body;
+  if (!p.truncated) {
+    try {
+      body = JSON.stringify(JSON.parse(body), null, 2);
+    } catch {
+      // não é JSON: fica como veio
+    }
+  }
+  const notes = [];
+  if (p.truncated) notes.push(`app enviou só os primeiros ${p.body.length} de ${p.size} caracteres`);
+  if (body.length > maxBody) {
+    notes.push(`mostrando ${maxBody} de ${body.length}; use maxBody para ver mais`);
+    body = body.slice(0, maxBody);
+  }
+  return notes.length ? `${body}\n[${notes.join('; ')}]` : body;
+}
+
+function headerLines(h) {
+  const keys = Object.keys(h || {});
+  return keys.length ? keys.map((k) => `  ${k}: ${h[k]}`).join('\n') : '  (nenhum)';
+}
+
+function networkDetail(e, { maxBody = 8000 } = {}) {
+  const head = [`#${e.id} ${e.method} ${e.url}`];
+  const info = [`via ${e.via}`, `rota ${e.href || '-'}`, new Date(e.ts).toTimeString().slice(0, 8), netStatus(e) + (e.statusText ? ` ${e.statusText}` : '')];
+  if (e.ms !== undefined && e.ms !== null) info.push(`${e.ms} ms`);
+  head.push(info.join(' · '));
+  if (e.error) head.push(`erro: ${e.error}`);
+  const out = [head.join('\n'), `Pedido (${size(e.request.size)})\n${headerLines(e.request.headers)}\n\n${bodyText(e.request, maxBody)}`];
+  out.push(e.response
+    ? `Resposta (${size(e.response.size)})\n${headerLines(e.response.headers)}\n\n${bodyText(e.response, maxBody)}`
+    : 'Resposta: ainda não chegou');
+  return out.join('\n\n');
+}
+
+module.exports = { table, sqlResult, logLine, networkLine, networkDetail };

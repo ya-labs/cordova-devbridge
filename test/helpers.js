@@ -152,17 +152,50 @@ function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
     }
   }
 
+  // XHR com o necessário do real: status, cabeçalhos, eventos e on<evento>.
   class XMLHttpRequest {
+    constructor() {
+      this.listeners = {};
+      this.readyState = 0;
+      this.status = 0;
+      this.statusText = '';
+      this.responseType = '';
+      this.responseText = '';
+      this.rawHeaders = '';
+    }
     open(method, url) {
       this.method = method;
       this.url = url;
       this.headers = {};
+      this.readyState = 1;
     }
     setRequestHeader(k, v) {
       this.headers[k] = v;
     }
+    addEventListener(type, fn) {
+      (this.listeners[type] = this.listeners[type] || []).push(fn);
+    }
+    getAllResponseHeaders() {
+      return this.rawHeaders;
+    }
+    emit(type) {
+      (this.listeners[type] || []).forEach((fn) => fn.call(this, { type }));
+      if (typeof this['on' + type] === 'function') this['on' + type]({ type });
+    }
     send(body) {
-      fetch(baseUrl + this.url, { method: this.method, headers: this.headers, body }).catch(() => {});
+      const url = /^https?:/.test(this.url) ? this.url : baseUrl + this.url;
+      fetch(url, { method: this.method, headers: this.headers, body: body === undefined ? undefined : body }).then(async (res) => {
+        this.status = res.status;
+        this.statusText = res.statusText;
+        this.rawHeaders = [...res.headers].map(([k, v]) => `${k}: ${v}`).join('\r\n');
+        this.responseText = await res.text();
+        this.response = this.responseText;
+        this.readyState = 4;
+        ['readystatechange', 'load', 'loadend'].forEach((t) => this.emit(t));
+      }, () => {
+        this.readyState = 4;
+        ['readystatechange', 'error', 'loadend'].forEach((t) => this.emit(t));
+      });
     }
   }
 
@@ -218,6 +251,7 @@ function runClient(baseUrl, { sqlitePlugin, globals = {}, storage = {} } = {}) {
     clearInterval,
     encodeURIComponent,
     decodeURIComponent,
+    URL,
     sqlitePlugin: sqlitePlugin || undefined,
     ...globals,
   };

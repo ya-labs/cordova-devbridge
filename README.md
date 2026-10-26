@@ -5,7 +5,8 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android:
 - **Live reload pelo cabo:** você instala um APK "dev" uma única vez. Depois disso, salvar qualquer arquivo em `www/` atualiza o app no celular em cerca de 1 s, sem build. Mudanças só de CSS são aplicadas sem recarregar a página.
 - **Banco em tempo real:** SQL contra o SQLite do app rodando, pelo terminal (`devbridge sql`) ou pelo **console web** (`http://localhost:8100/__devbridge/`). O console tem lista de tabelas, grade editável, histórico e logs ao vivo.
 - **Console do app no PC:** os `console.*` e erros não tratados do app aparecem no terminal e no console web.
-- **MCP para agentes de IA:** o Claude Code ou o Codex podem recarregar o app, ler logs, consultar o banco e tirar screenshot sozinhos.
+- **Inspetor de rede:** as requisições do app ao backend (XHR, `fetch` e `cordova-plugin-advanced-http`), com status, duração, cabeçalhos e corpos, no terminal, no console web e no MCP.
+- **MCP para agentes de IA:** o Claude Code ou o Codex podem recarregar o app, ler logs e requisições, consultar o banco e tirar screenshot sozinhos.
 
 Não tem dependências: é Node 20+ puro, mais o `adb`.
 
@@ -68,6 +69,7 @@ Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 | `defaultDb` | alias usado quando `--db` não é informado |
 | `allowWrites` | libera `--write`, o `db_exec` do MCP e a edição da grade (padrão `false`) |
 | `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
+| `networkMask` | `true` (padrão): no inspetor de rede, `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key` e campos com senha/password/token/secret (JSON, formulário, query e XML) aparecem como `***`. `false` mostra os valores como vieram |
 | `reloadRestore` | script do app (fora do `www/`) que guarda o estado antes do reload e volta para a tela depois do boot; implica reload pela rota inicial |
 | `www`, `platformWww`, `cordova` | caminhos e comando, caso fujam do padrão |
 
@@ -110,6 +112,9 @@ Em todo reload aparece uma camada "Recarregando…" no app, que some quando o `d
 ```bash
 devbridge status                                   # app conectado, tela, conexões abertas
 devbridge logs -f --level warn,error               # console do app ao vivo
+devbridge network -f                               # requisições do app ao backend, ao vivo
+devbridge network --failed --url /api/             # só falhas (>= 400, sem resposta, erro de rede)
+devbridge network 12                               # cabeçalhos e corpos da requisição #12
 devbridge sql "select * from clientes limit 5"     # leitura (banco padrão)
 devbridge sql "select * from parametros" --db config
 devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
@@ -125,6 +130,8 @@ devbridge screenshot
 - **excluir:** o ✕ da linha apaga pelo `rowid`, depois de confirmar.
 
 Ctrl+Enter executa o SQL.
+
+**Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo, e o servidor guarda as 500 requisições mais recentes.
 
 **Tela ao vivo:** o botão "Tela" do console abre `http://localhost:8100/__devbridge/mirror` numa janela separada, espelhando o celular (cerca de 4 a 5 quadros por segundo, por `adb screencap`). Espaço pausa; o botão de download salva o quadro atual em PNG. A captura só roda enquanto a janela está aberta e visível.
 
@@ -150,13 +157,14 @@ Ferramentas expostas:
 - `app_status`
 - `app_reload`
 - `app_logs`
+- `app_network` (lista, com `since`, `url`, `failed` e `local`) e `app_network_entry` (detalhe de uma requisição)
 - `db_query`
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
 - `db_exec`, só com `allowWrites`
 
-O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `db_query` / `app_screenshot` para validar.
+O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `app_network` / `db_query` / `app_screenshot` para validar.
 
 ## Limites
 

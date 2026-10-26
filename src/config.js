@@ -13,6 +13,7 @@ const DEFAULTS = {
   allowWrites: false,
   reloadKeepRoute: true,
   reloadRestore: null,
+  networkMask: true,
   databases: {},
   defaultDb: null,
 };

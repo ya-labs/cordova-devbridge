@@ -17,6 +17,8 @@
   document.addEventListener('deviceready', function () {
     deviceReady = true;
     post('/state', { client: clientId, href: location.href, ready: true });
+    // cordova.plugin.http só existe depois que o cordova.js carrega os plugins.
+    patchAdvancedHttp();
     startRestore();
   }, false);
 
@@ -137,6 +139,7 @@
   function post(path, body) {
     try {
       var xhr = new XMLHttpRequest();
+      xhr.__dvbOwn = true; // o inspetor de rede não registra o próprio canal
       xhr.open('POST', base + path, true);
       xhr.setRequestHeader('Content-Type', 'application/json');
       xhr.send(JSON.stringify(body));
@@ -260,6 +263,244 @@
     post('/state', { client: clientId, href: location.href });
   });
 
+  // ---- rede -------------------------------------------------------------
+  // Cada chamada do app gera um evento "start" e um "end" (mesmo id), em lote
+  // como os logs. O canal do próprio devbridge (/__devbridge/) fica de fora.
+  var BODY_LIMIT = 32768;
+  var netQueue = [];
+  var netTimer = null;
+  var netSeq = 0;
+
+  function pushNet(ev) {
+    netQueue.push(ev);
+    if (netQueue.length > 1000) netQueue.splice(0, netQueue.length - 1000);
+    if (!netTimer) netTimer = setTimeout(flushNet, 250);
+  }
+
+  function flushNet() {
+    netTimer = null;
+    if (!netQueue.length) return;
+    post('/network', { client: clientId, events: netQueue.splice(0, netQueue.length) });
+  }
+
+  function absUrl(u) {
+    try { return new URL(String(u), location.href).href; } catch (e) { return String(u); }
+  }
+
+  function isOwn(abs) {
+    return abs.indexOf(base + '/') === 0 || abs.indexOf(location.origin + base + '/') === 0;
+  }
+
+  function typeOf(v) { return Object.prototype.toString.call(v).slice(8, -1); }
+
+  // Corpo como texto, cortado em BODY_LIMIT; binário vira só uma descrição.
+  function bodyInfo(b) {
+    if (b === undefined || b === null || b === '') return null;
+    var text;
+    var t = typeOf(b);
+    if (typeof b === 'string') text = b;
+    else if (t === 'URLSearchParams') text = String(b);
+    else if (t === 'FormData') text = '[FormData]';
+    else if (t === 'Blob' || t === 'File') return { body: '[' + t + ' ' + b.size + ' bytes]', size: b.size };
+    else if (t === 'ArrayBuffer') return { body: '[ArrayBuffer ' + b.byteLength + ' bytes]', size: b.byteLength };
+    else if (b.buffer && typeOf(b.buffer) === 'ArrayBuffer') return { body: '[' + t + ' ' + b.byteLength + ' bytes]', size: b.byteLength };
+    else if (b.nodeType) text = '[Document]';
+    else text = serialize(b);
+    var out = { body: text, size: text.length };
+    if (text.length > BODY_LIMIT) {
+      out.body = text.slice(0, BODY_LIMIT);
+      out.truncated = true;
+    }
+    return out;
+  }
+
+  function parseHeaderBlock(raw) {
+    var out = {};
+    String(raw || '').split(/\r?\n/).forEach(function (line) {
+      var i = line.indexOf(':');
+      if (i > 0) out[line.slice(0, i).trim().toLowerCase()] = line.slice(i + 1).trim();
+    });
+    return out;
+  }
+
+  function headersObject(h) {
+    var out = {};
+    if (!h) return out;
+    try {
+      if (typeof h.forEach === 'function' && typeOf(h) !== 'Array') {
+        h.forEach(function (v, k) { out[String(k).toLowerCase()] = String(v); });
+      } else if (typeOf(h) === 'Array') {
+        for (var i = 0; i < h.length; i++) out[String(h[i][0]).toLowerCase()] = String(h[i][1]);
+      } else {
+        for (var k in h) if (Object.prototype.hasOwnProperty.call(h, k)) out[k.toLowerCase()] = String(h[k]);
+      }
+    } catch (e) { /* cabeçalhos ilegíveis ficam vazios */ }
+    return out;
+  }
+
+  // Devolve o id, ou null se a chamada não deve ser registrada.
+  function netStart(via, method, url, headers, body) {
+    var abs = absUrl(url);
+    if (isOwn(abs)) return null;
+    var id = ++netSeq;
+    var b = bodyInfo(body);
+    pushNet({
+      phase: 'start', id: id, via: via, method: String(method || 'GET').toUpperCase(), url: abs,
+      local: abs.indexOf(location.origin + '/') === 0, ts: Date.now(), href: location.hash || location.pathname,
+      request: { headers: headers || {}, body: b && b.body, size: b ? b.size : 0, truncated: !!(b && b.truncated) },
+    });
+    return id;
+  }
+
+  function netEnd(id, status, statusText, headers, body, error) {
+    if (!id) return;
+    var b = bodyInfo(body);
+    var ev = { phase: 'end', id: id, ts: Date.now(), status: status, statusText: statusText || '' };
+    if (error) ev.error = String(error);
+    ev.response = { headers: headers || {}, body: b && b.body, size: b ? b.size : 0, truncated: !!(b && b.truncated) };
+    pushNet(ev);
+  }
+
+  function safe(fn) {
+    try { return fn(); } catch (e) { return null; }
+  }
+
+  // XHR: patch no prototype preserva instanceof, readyState e os handlers do app.
+  (function () {
+    var X = window.XMLHttpRequest;
+    if (!X || !X.prototype || X.prototype.__dvbNet) return;
+    var P = X.prototype;
+    var open = P.open;
+    var send = P.send;
+    var setHeader = P.setRequestHeader;
+    P.__dvbNet = true;
+    P.open = function (method, url) {
+      this.__dvb = { method: method, url: url, headers: {} };
+      return open.apply(this, arguments);
+    };
+    P.setRequestHeader = function (k, v) {
+      if (this.__dvb) this.__dvb.headers[String(k).toLowerCase()] = String(v);
+      return setHeader.apply(this, arguments);
+    };
+    P.send = function (body) {
+      var xhr = this;
+      var info = !xhr.__dvbOwn && xhr.__dvb;
+      var id = info && safe(function () { return netStart('xhr', info.method, info.url, info.headers, body); });
+      if (id && typeof xhr.addEventListener === 'function') {
+        var failure = null;
+        var mark = function (why) { return function () { failure = why; }; };
+        xhr.addEventListener('error', mark('falha de rede'));
+        xhr.addEventListener('abort', mark('abortada'));
+        xhr.addEventListener('timeout', mark('tempo esgotado'));
+        xhr.addEventListener('loadend', function () {
+          safe(function () {
+            var rt = xhr.responseType;
+            var res = !rt || rt === 'text' ? xhr.responseText : xhr.response;
+            netEnd(id, xhr.status, xhr.statusText, parseHeaderBlock(xhr.getAllResponseHeaders()), res, failure);
+          });
+        });
+      }
+      return send.apply(this, arguments);
+    };
+  })();
+
+  // fetch: lê o corpo de um clone, só quando é texto.
+  var TEXTUAL = /json|text|xml|javascript|x-www-form-urlencoded/i;
+  if (typeof window.fetch === 'function' && !window.fetch.__dvbNet) {
+    var origFetch = window.fetch;
+    var wrappedFetch = function (input, init) {
+      var id = safe(function () {
+        var req = typeof input === 'string' ? null : input;
+        var url = req && req.url ? req.url : input;
+        var method = (init && init.method) || (req && req.method) || 'GET';
+        var headers = headersObject((init && init.headers) || (req && req.headers));
+        var body = init && init.body !== undefined ? init.body : (req && req.body ? '[corpo do Request]' : null);
+        return netStart('fetch', method, url, headers, body);
+      });
+      var p = origFetch.apply(window, arguments);
+      if (!id) return p;
+      p.then(function (res) {
+        safe(function () {
+          var headers = headersObject(res.headers);
+          var type = headers['content-type'] || '';
+          if (type && !TEXTUAL.test(type)) {
+            return netEnd(id, res.status, res.statusText, headers, '[' + type + (headers['content-length'] ? ' ' + headers['content-length'] + ' bytes' : '') + ']');
+          }
+          res.clone().text().then(function (text) {
+            netEnd(id, res.status, res.statusText, headers, text);
+          }, function (e) {
+            netEnd(id, res.status, res.statusText, headers, null, 'corpo ilegível: ' + (e && e.message));
+          });
+        });
+      }, function (e) {
+        netEnd(id, 0, '', {}, null, (e && e.message) || String(e));
+      });
+      return p;
+    };
+    wrappedFetch.__dvbNet = true;
+    window.fetch = wrappedFetch;
+  }
+
+  // cordova-plugin-advanced-http chama o nativo direto, sem XHR. O patch é no
+  // próprio objeto (quem guardou a referência também é coberto). post/get/...
+  // podem chamar sendRequest por dentro: a profundidade evita registrar duas vezes.
+  var HTTP_METHODS = ['sendRequest', 'get', 'post', 'put', 'patch', 'delete', 'head', 'options', 'uploadFile', 'downloadFile'];
+  var httpDepth = 0;
+
+  function httpRequestInfo(name, args) {
+    var opts = name === 'sendRequest' ? (args[1] || {}) : null;
+    if (opts) return { method: opts.method || 'get', headers: opts.headers, body: opts.data !== undefined ? opts.data : opts.params };
+    if (name === 'uploadFile') return { method: 'POST', headers: args[2], body: '[upload ' + args[3] + ']' };
+    if (name === 'downloadFile') return { method: 'GET', headers: args[2], body: null };
+    var withBody = name === 'post' || name === 'put' || name === 'patch';
+    return { method: name, headers: args[2], body: withBody ? args[1] : null };
+  }
+
+  function patchAdvancedHttp() {
+    var http = window.cordova && window.cordova.plugin && window.cordova.plugin.http;
+    if (!http || http.__dvbNet) return;
+    http.__dvbNet = true;
+    HTTP_METHODS.forEach(function (name) {
+      var orig = http[name];
+      if (typeof orig !== 'function') return;
+      http[name] = function () {
+        var args = Array.prototype.slice.call(arguments);
+        if (httpDepth > 0) return orig.apply(this, args);
+        var id = safe(function () {
+          var info = httpRequestInfo(name, args);
+          return netStart('advanced-http', info.method, args[0], headersObject(info.headers), info.body);
+        });
+        if (id) {
+          // success e failure são as duas primeiras funções da lista de argumentos.
+          var cbs = [];
+          for (var i = 0; i < args.length; i++) if (typeof args[i] === 'function') cbs.push(i);
+          if (cbs.length >= 1) args[cbs[0]] = wrapHttpCallback(id, args[cbs[0]], false);
+          if (cbs.length >= 2) args[cbs[1]] = wrapHttpCallback(id, args[cbs[1]], true);
+        }
+        httpDepth++;
+        try {
+          return orig.apply(this, args);
+        } finally {
+          httpDepth--;
+        }
+      };
+    });
+  }
+
+  function wrapHttpCallback(id, cb, failed) {
+    return function (res) {
+      safe(function () {
+        var r = res || {};
+        var status = typeof r.status === 'number' ? r.status : 0;
+        var body = failed ? (r.error !== undefined ? r.error : r.data) : r.data;
+        netEnd(id, status, '', headersObject(r.headers), body, failed && status <= 0 ? (r.error || 'falha de rede') : null);
+      });
+      return cb.apply(this, arguments);
+    };
+  }
+
+  patchAdvancedHttp();
+
   // ---- SQLite -----------------------------------------------------------
   function whenReady(cb) {
     if (window.sqlitePlugin) return cb(null);
@@ -360,6 +601,7 @@
   // há apps cujo boot (deviceready, abrir o SQLite) só acontece nela.
   function reloadApp() {
     flushLogs();
+    flushNet();
     showOverlay('Recarregando…');
     savePending();
     if (!keepRoute && location.hash && window.history && history.replaceState) {
@@ -412,6 +654,7 @@
   window.__devbridge = {
     client: clientId,
     flushLogs: flushLogs,
+    flushNet: flushNet,
     // O script do reloadRestore registra { save: fn() -> dados, restore: fn(salvo, done) }.
     restore: function (hook) { restoreHook = hook; },
     waitFor: waitFor,
