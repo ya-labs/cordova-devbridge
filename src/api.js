@@ -31,6 +31,9 @@ class Api {
   network(opts) { return this.call('GET', '/network', { query: opts }); }
   networkEntry(id) { return this.call('GET', '/network/entry', { query: { id } }); }
   sql(body) { return this.call('POST', '/sql', { body }); }
+  snapshots() { return this.call('GET', '/snapshots'); }
+  snapshot(body) { return this.call('POST', '/snapshot', { body }); }
+  restore(name) { return this.call('POST', '/restore', { body: { name } }); }
   storage(body) { return this.call('POST', '/storage', { body }); }
   navigate(route) { return this.call('POST', '/navigate', { body: { route } }); }
   evaluate(body) { return this.call('POST', '/eval', { body }); }

@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult } = require('./format');
+const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -98,6 +98,25 @@ function buildTools(config) {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'db_snapshot',
+      description: 'Salva o estado dos bancos SQLite do app no PC (.devbridge/snapshots/<name>), para repetir um teste a partir do mesmo ponto. Fecha o app durante a cópia e o reabre. Sem "db", copia todos os bancos do app.',
+      inputSchema: {
+        type: 'object',
+        properties: { name: { type: 'string', description: 'Letras, números, ponto, hífen ou sublinhado. Um nome existente é substituído.' }, db: dbProp },
+        required: ['name'],
+      },
+    },
+    {
+      name: 'db_restore',
+      description: 'Volta os bancos do app ao estado de um snapshot: fecha o app, troca os arquivos (apaga journal/wal que não estavam no snapshot) e reabre. Apaga as mudanças feitas depois do snapshot; fica em .devbridge/snapshot-history.log.',
+      inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
+    },
+    {
+      name: 'db_snapshots',
+      description: 'Lista os snapshots de banco salvos no PC.',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
       name: 'app_storage',
       description: 'Lê o armazenamento do app fora do SQLite: localStorage ("local"), sessionStorage ("session") e NativeStorage ("native"). Sem key lista as chaves com prévia; com key devolve o valor (JSON formatado). action "set"/"remove" grava ou apaga (fica em .devbridge/storage-history.log). Chaves devbridge.* são do próprio devbridge e não podem ser alteradas.',
       inputSchema: {
@@ -170,6 +189,12 @@ async function callTool(api, name, args) {
       const r = await api.sql({ sql: args.sql, params: args.params, statements: args.statements, db: args.db, maxRows: args.maxRows || 200 });
       return text(r.results ? sqlBatchResult(r, args.statements) : sqlResult(r));
     }
+    case 'db_snapshot':
+      return text(snapshotResult(await api.snapshot({ name: args.name, db: args.db })));
+    case 'db_restore':
+      return text(snapshotResult(await api.restore(args.name)));
+    case 'db_snapshots':
+      return text(snapshotList(await api.snapshots()));
     case 'app_storage':
       return text(storageResult(await api.storage({ area: args.area, key: args.key, action: args.action, value: args.value })));
     case 'app_navigate':

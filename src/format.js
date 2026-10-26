@@ -122,6 +122,25 @@ function evalResult(r, { max = 20000 } = {}) {
   return `${body}\n\n(${info.join(' · ')})`;
 }
 
+function kb(n) {
+  return `${(n / 1024).toFixed(0)} KB`;
+}
+
+function snapshotResult(r) {
+  const files = r.files.map((f) => `  ${f.name} (${kb(f.size)})`).join('\n');
+  const reopen = r.reopened ? 'app reaberto' : 'app parado: abra-o no celular ou rode devbridge launch';
+  if (r.removed) {
+    const extra = r.removed.length ? `\nApagados (não estavam no snapshot): ${r.removed.join(', ')}` : '';
+    return `Restaurado "${r.name}" (de ${r.createdAt}):\n${files}${extra}\n(${reopen})`;
+  }
+  return `Snapshot "${r.name}"${r.replaced ? ' (substituído)' : ''}:\n${files}\n(${reopen})`;
+}
+
+function snapshotList(list) {
+  if (!list.length) return '(nenhum snapshot; crie com db_snapshot / devbridge db-snapshot <nome>)';
+  return list.map((s) => `${s.name}  ${s.createdAt}  ${s.files} arquivo(s), ${kb(s.size)}${s.db ? `  (banco ${s.db})` : ''}`).join('\n');
+}
+
 function storageResult(r) {
   if (r.items) {
     if (!r.items.length) return `(${r.area}: vazio)`;
@@ -144,4 +163,4 @@ function navigateResult(r) {
   return out.join('\n');
 }
 
-module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult };
+module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList };

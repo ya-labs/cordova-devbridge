@@ -51,6 +51,34 @@ function readAppFile(pkg, relPath) {
   return run(['exec-out', 'run-as', pkg, 'cat', relPath], { encoding: 'buffer', timeout: 120000 });
 }
 
+// O exec-in volta antes de o aparelho terminar de gravar (medido: 250 a 500 ms
+// com 0,3 a 5 MB); só dá a escrita por concluída quando o tamanho bate.
+async function writeAppFile(pkg, relPath, buf, { timeoutMs = 20000 } = {}) {
+  await new Promise((resolve, reject) => {
+    const child = spawn(ADB, ['exec-in', 'run-as', pkg, 'sh', '-c', `cat > '${relPath}'`], { stdio: ['pipe', 'ignore', 'pipe'] });
+    let err = '';
+    child.stderr.on('data', (c) => (err += c));
+    child.on('error', reject);
+    child.on('exit', (code) => (code === 0 ? resolve() : reject(new Error(`adb exec-in ${relPath}: ${err.trim() || `código ${code}`}`))));
+    child.stdin.end(buf);
+  });
+  const started = Date.now();
+  for (;;) {
+    const size = Number((await run(['shell', 'run-as', pkg, 'stat', '-c', '%s', relPath]).catch(() => '')).trim());
+    if (size === buf.length) return;
+    if (Date.now() - started > timeoutMs) throw new Error(`${relPath}: o aparelho tem ${size} bytes, esperado ${buf.length}.`);
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+function removeAppFile(pkg, relPath) {
+  return run(['shell', 'run-as', pkg, 'rm', '-f', relPath]);
+}
+
+function forceStop(pkg) {
+  return run(['shell', 'am', 'force-stop', pkg]);
+}
+
 function screencap() {
   return run(['exec-out', 'screencap', '-p'], { encoding: 'buffer' });
 }
@@ -73,4 +101,4 @@ async function restart(pkg) {
   return launch(pkg);
 }
 
-module.exports = { run, devices, reverse, hasReverse, listDatabases, readAppFile, screencap, install, launch, restart };
+module.exports = { run, devices, reverse, hasReverse, listDatabases, readAppFile, writeAppFile, removeAppFile, forceStop, screencap, install, launch, restart };

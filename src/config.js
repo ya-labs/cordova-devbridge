@@ -71,6 +71,11 @@ function loadConfig(options = {}) {
   return config;
 }
 
+// Nome de banco com * (ex.: MeuApp_*.db) casado contra os arquivos do aparelho.
+function globToRegExp(glob) {
+  return new RegExp('^' + glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*') + '$');
+}
+
 // --db aceita um alias da config ou um nome de arquivo literal (*.db).
 function resolveDatabase(config, requested) {
   const key = requested || config.defaultDb;
@@ -80,4 +85,4 @@ function resolveDatabase(config, requested) {
   throw new Error(`Banco "${key}" não existe na config. Disponíveis: ${Object.keys(config.databases).join(', ') || '(nenhum)'}`);
 }
 
-module.exports = { CONFIG_NAME, findConfig, loadConfig, resolveDatabase, normalizeDatabases };
+module.exports = { CONFIG_NAME, findConfig, loadConfig, resolveDatabase, normalizeDatabases, globToRegExp };
