@@ -83,7 +83,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 **Feito:**
 - Tudo do MVP: build, start, sql, tables, schema, pull-db, screenshot, logs, mcp e o console web com grade editável.
 - `npm test`: 61/61.
-- Backlog #8 a #14 entregue (PRs #15 a #21): inspetor de rede, eval no app (MCP, CLI e console web, sem trava na config), navegação por rota, SQL em lote, storage (local/session/native), snapshot e restore do banco, e toque/texto/teclas (MCP, CLI e espelho). Validado com testes, Chrome headless via CDP e, no aparelho, só a primitiva de escrita do snapshot (`exec-in` num arquivo temporário em `cache/`).
+- Backlog #8 a #14 entregue (PRs #15 a #21): inspetor de rede, eval no app (MCP, CLI e console web, sem trava na config), navegação por rota, SQL em lote, storage (local/session/native), snapshot e restore do banco, e toque/texto/teclas (MCP, CLI e espelho). Validado com testes e Chrome headless via CDP, e no aparelho pela pessoa (2026-10-26): rede com login e sincronização reais, eval, navegação, SQL em lote com rollback, storage, ciclo snapshot → escrita → restore e toque/texto/teclas, pelo MCP e pelo espelho.
 - Contra um app real: os 66 recursos do `index.html` e os 72 módulos de plugin resolvem com 200.
 - `devbridge build --no-install` compila em cerca de 35 s, e o APK sai com `content src="http://localhost:8100/index.html"`.
 - No Chrome real, com uma página mínima: conexão, SQL, logs, troca de CSS, reload na mesma rota e edição da grade.
@@ -103,7 +103,6 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - Console web contra o app no aparelho.
 - MCP registrado num Claude Code de verdade.
 - Um segundo app real, com um banco só.
-- Tudo do backlog #8 a #14 no aparelho, pelo MCP: `app_network` com login e sincronização reais (e o `cordova-plugin-advanced-http` real), `app_eval` com um serviço AngularJS pelo `injector`, `app_navigate` com o router real, `db_exec` com `statements` e rollback, `app_storage` nas três áreas depois do login, ciclo `db_snapshot` → escrita → `db_restore`, e `app_tap`/`app_type` (com e sem acento)/`app_key` pelo MCP e pelo espelho.
 
 ## Situação atual
 
@@ -148,7 +147,7 @@ Confira com `git log` e `gh issue list` antes de confiar nesta seção.
 
 Se algo falhar no aparelho, peça a saída do `build`/`start`, corrija com teste em branch de issue e atualize esta seção.
 
-**Critério das features novas:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral não ganha opção na config (as travas `allowWrites`/`allowEval` foram removidas na #9): exige pedido explícito por chamada e fica em histórico em `.devbridge/`. Backlog nesse critério: #8 a #14, entregue em 2026-10-26 e aguardando validação no aparelho (ver Pendente).
+**Critério das features novas:** o valor de cada uma é medido pelo que o agente consegue fazer com ela, então a ferramenta MCP é a entrega principal e entra nos critérios de aceite; CLI e console web vêm junto. Recurso com efeito colateral não ganha opção na config (as travas `allowWrites`/`allowEval` foram removidas na #9): exige pedido explícito por chamada e fica em histórico em `.devbridge/`. Backlog nesse critério: #8 a #14, entregue e validado no aparelho em 2026-10-26.
 
 **Ideias registradas, fora do escopo atual:** suporte a iOS, Wi-Fi como alternativa ao `adb reverse` e teste automatizado de clique na UI.
 
