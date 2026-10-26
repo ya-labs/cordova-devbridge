@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, logLine, networkLine, networkDetail, evalResult } = require('./format');
+const { sqlResult, logLine, networkLine, networkDetail, evalResult, navigateResult } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -93,6 +93,15 @@ function buildTools(config) {
       inputSchema: { type: 'object', properties: {} },
     },
     {
+      name: 'app_navigate',
+      description: 'Leva o app a uma rota (hash do AngularJS) e devolve a rota final, avisando se o app redirecionou (guarda de login, otherwise). Use antes de app_screenshot/app_logs para validar uma tela específica. Só depois do deviceready.',
+      inputSchema: {
+        type: 'object',
+        properties: { route: { type: 'string', description: 'Ex.: "/pedidos/12", "#/pedidos/12" ou "#!/pedidos". Sem "#", usa o prefixo que o app já usa.' } },
+        required: ['route'],
+      },
+    },
+    {
       name: 'app_eval',
       description: 'Avalia JavaScript no app rodando (escopo global do WebView) e devolve o valor; promessas são esperadas. Útil para ler estado do AngularJS, ex.: angular.element(document.body).injector().get("MeuServico") ou angular.element(document.querySelector("[ng-controller]")).scope(). Pode alterar o estado do app; fica registrado em .devbridge/eval-history.log.',
       inputSchema: {
@@ -143,6 +152,8 @@ async function callTool(api, name, args) {
       const r = await api.sql({ sql: args.sql, params: args.params, db: args.db, maxRows: args.maxRows || 200 });
       return text(sqlResult(r));
     }
+    case 'app_navigate':
+      return text(navigateResult(await api.navigate(args.route)));
     case 'app_eval':
       return text(evalResult(await api.evaluate({ expression: args.expression, timeoutMs: args.timeoutMs })));
     case 'db_exec': {

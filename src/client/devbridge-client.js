@@ -573,6 +573,37 @@
     });
   }
 
+  // ---- navegação ---------------------------------------------------------
+  // A rota segue o prefixo que o app já usa (#! ou #). A resposta espera o hash
+  // ficar parado: uma guarda de login ou o otherwise do router pode redirecionar.
+  var NAV_SETTLE = 300;
+  var NAV_LIMIT = 3000;
+
+  function routeHash(route) {
+    var r = String(route || '').trim();
+    if (r.charAt(0) === '#') return r;
+    var prefix = location.hash.indexOf('#!') === 0 ? '#!' : '#';
+    return prefix + (r.charAt(0) === '/' ? r : '/' + r);
+  }
+
+  function runNavigate(req, reply) {
+    if (!deviceReady) return reply(false, null, 'O app ainda não disparou deviceready; espere o boot terminar.');
+    var target = routeHash(req.route);
+    var started = Date.now();
+    var last = location.hash;
+    var changedAt = started;
+    if (location.hash !== target) location.hash = target;
+    (function check() {
+      var now = Date.now();
+      if (location.hash !== last) {
+        last = location.hash;
+        changedAt = now;
+      }
+      if (now - changedAt < NAV_SETTLE && now - started < NAV_LIMIT) return setTimeout(check, 50);
+      reply(true, { requested: target, hash: location.hash, href: location.href, redirected: location.hash !== target, ms: now - started });
+    })();
+  }
+
   // ---- eval -------------------------------------------------------------
   // Eval indireto: roda no escopo global, fora do modo estrito do client.
   // Resultado thenable é esperado até timeoutMs; código síncrono não tem como parar.
@@ -685,6 +716,14 @@
       var req = JSON.parse(ev.data);
       try {
         runSql(req, replyFor(req.id));
+      } catch (e) {
+        replyFor(req.id)(false, null, e.message || String(e));
+      }
+    });
+    es.addEventListener('navigate', function (ev) {
+      var req = JSON.parse(ev.data);
+      try {
+        runNavigate(req, replyFor(req.id));
       } catch (e) {
         replyFor(req.id)(false, null, e.message || String(e));
       }

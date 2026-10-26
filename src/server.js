@@ -227,6 +227,11 @@ class DevServer {
     await fsp.appendFile(path.join(this.config.stateDir, 'sql-history.log'), line + '\n');
   }
 
+  navigate({ route } = {}) {
+    if (typeof route !== 'string' || !route.trim()) return Promise.reject(new Error('Informe a rota, ex.: #/pedidos ou /pedidos.'));
+    return this.request('navigate', { route }, 8000);
+  }
+
   async evaluate({ expression, timeoutMs = 10000 } = {}) {
     if (typeof expression !== 'string' || !expression.trim()) throw new Error('Expressão vazia.');
     const limit = Math.min(Math.max(Number(timeoutMs) || 10000, 100), 120000);
@@ -340,6 +345,8 @@ class DevServer {
           return this.json(res, 200, this.network.get(q.get('id')));
         case 'POST /sql':
           return this.json(res, 200, await this.sql(await readJson(req)));
+        case 'POST /navigate':
+          return this.json(res, 200, await this.navigate(await readJson(req)));
         case 'POST /eval':
           return this.json(res, 200, await this.evaluate(await readJson(req)));
         case 'GET /tables':

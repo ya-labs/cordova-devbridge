@@ -118,6 +118,7 @@ devbridge sql "select * from parametros" --db config
 devbridge sql "update clientes set nome = ? where rowid = ?" --params '["Teste",3]' --write
 devbridge tables
 devbridge schema pedidos
+devbridge go /pedidos/12                           # leva o app à rota e mostra se ele redirecionou
 devbridge eval "location.hash"                     # JavaScript no app
 devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
@@ -132,6 +133,8 @@ devbridge screenshot
 Ctrl+Enter executa o SQL.
 
 **Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo, e o servidor guarda as 500 requisições mais recentes.
+
+**Rota:** clique no caminho do app no indicador de status (topo) para editar a rota; Enter leva o app até ela.
 
 **JavaScript no app:** o rodapé do painel "Console do app" tem uma linha de comando, como a do DevTools. Enter executa, Shift+Enter quebra linha e ↑/↓ percorrem as expressões anteriores. A expressão e o resultado entram na lista de logs, com objetos expansíveis e erros em vermelho. Usa a mesma API do `app_eval`, então tudo vai para o `.devbridge/eval-history.log`.
 
@@ -165,6 +168,7 @@ Ferramentas expostas:
 - `db_tables`
 - `db_schema`
 - `app_screenshot`
+- `app_navigate` (leva o app a uma rota e diz se ele redirecionou)
 - `app_eval`
 - `db_exec` (escrita)
 

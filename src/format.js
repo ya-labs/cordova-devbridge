@@ -111,4 +111,11 @@ function evalResult(r, { max = 20000 } = {}) {
   return `${body}\n\n(${info.join(' · ')})`;
 }
 
-module.exports = { table, sqlResult, logLine, networkLine, networkDetail, evalResult };
+function navigateResult(r) {
+  const out = [`Rota atual: ${r.hash || '(sem hash)'}`];
+  if (r.redirected) out.push(`O app redirecionou: o pedido foi ${r.requested}.`);
+  out.push(`(${r.href} · ${r.ms} ms)`);
+  return out.join('\n');
+}
+
+module.exports = { table, sqlResult, logLine, networkLine, networkDetail, evalResult, navigateResult };
