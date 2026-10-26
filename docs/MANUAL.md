@@ -182,6 +182,7 @@ Abra `http://localhost:8100/__devbridge/` no navegador do PC:
 - lista de tabelas, grade, SQL com Ctrl+Enter e histórico;
 - logs do app ao vivo;
 - aba "Rede": as requisições do app ao backend; clique numa linha para ver cabeçalhos e corpos. "Só falhas" filtra status >= 400 e erros de rede; "Locais" inclui templates e scripts do próprio servidor;
+- clique na rota do app no indicador de status para ir a outra tela (Enter navega, Esc cancela);
 - uma linha de comando de JavaScript no rodapé do console do app: Enter executa no app, Shift+Enter quebra linha, ↑/↓ trazem as expressões anteriores;
 - com "escrita" ligada: duplo clique edita a célula, "+ Registro" inclui, ✕ exclui (com confirmação);
 - botão para recarregar o app;
@@ -191,7 +192,7 @@ Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que
 
 ## 7. MCP para agentes de IA
 
-O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_eval` e `db_exec`. Ele conversa com o `dvb start`, que precisa estar rodando.
+O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_navigate`, `app_eval` e `db_exec`. Ele conversa com o `dvb start`, que precisa estar rodando.
 
 Registro, na raiz do app:
 

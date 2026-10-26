@@ -123,6 +123,9 @@
   @keyframes ping { 0% { transform: scale(.6); opacity: .7; } 80%, 100% { transform: scale(1.5); opacity: 0; } }
   .status .label { font-weight: 600; flex: none; }
   .status .route { color: var(--muted); font-family: var(--mono); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .status.on .route { cursor: text; border-radius: 4px; padding: 1px 4px; margin: -1px -4px; }
+  .status.on .route:hover { background: var(--surface-3); color: var(--text); }
+  .status input.route-edit { width: 240px; height: 24px; padding: 0 6px; font: 12px var(--mono); }
   .spacer { flex: 1; }
   .group { display: flex; align-items: center; gap: 8px; }
   .group > label.cap { font-size: 12px; color: var(--muted); font-weight: 500; }
@@ -502,7 +505,7 @@
       var app = s.app;
       if (!app) setStatus('off', 'App desconectado', '', 'Abra o app dev no celular (dvb build) e confira o cabo');
       else if (app.error) setStatus('warn', 'Sem resposta', '', 'O app está conectado mas não respondeu: ' + app.error);
-      else setStatus('on', 'Conectado', (app.href || '').replace(/^https?:\/\/[^/]+/, ''), JSON.stringify(app, null, 2));
+      else setStatus('on', 'Conectado', (app.href || '').replace(/^https?:\/\/[^/]+/, ''), JSON.stringify(app, null, 2) + '\n\nClique na rota para ir a outra.');
       if (first) {
         var dbs = Object.keys(s.server.databases);
         $('db').innerHTML = dbs.map(function (d) { return '<option>' + d + '</option>'; }).join('');
@@ -1217,6 +1220,36 @@
     if ($('history').value !== '') $('sql').value = h[Number($('history').value)];
     $('history').value = '';
     $('sql').focus();
+  };
+  // Rota do app: clique no caminho do status para editar; Enter navega, Esc cancela.
+  $('appText').onclick = function () {
+    var app = state.status && state.status.app;
+    if (!app || app.error || $('app').querySelector('.route-edit')) return;
+    var href = app.href || '';
+    var input = el('input', 'field route-edit');
+    input.value = href.indexOf('#') >= 0 ? href.slice(href.indexOf('#')) : '#/';
+    input.title = 'Enter navega no app; Esc cancela';
+    $('appText').hidden = true;
+    $('app').appendChild(input);
+    input.focus();
+    input.select();
+    function close() {
+      input.remove();
+      $('appText').hidden = false;
+    }
+    input.onblur = close;
+    input.onkeydown = function (ev) {
+      if (ev.key === 'Escape') return close();
+      if (ev.key !== 'Enter') return;
+      var route = input.value.trim();
+      close();
+      if (!route) return;
+      info('navegando…', 'busy');
+      api('POST', '/navigate', { route: route }).then(function (r) {
+        info('Rota: ' + r.hash + (r.redirected ? ' (o app redirecionou; pedido: ' + r.requested + ')' : ''), r.redirected ? '' : 'ok');
+        loadStatus();
+      }).catch(function (e) { info(e.message, 'err'); });
+    };
   };
   $('reload').onclick = function () {
     api('POST', '/reload').then(function (r) { info(r.apps ? 'Reload enviado ao app' : 'Nenhum app conectado', r.apps ? 'ok' : 'err'); });
