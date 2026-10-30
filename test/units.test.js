@@ -90,6 +90,27 @@ test('devbuild: patch troca content src e libera navegação só para o servidor
   assert.throws(() => patchConfigXml('<widget></widget>', 'http://x'), /content src/);
 });
 
+test('devbuild: sem servidor o app cai no www empacotado (ErrorUrl)', () => {
+  const widget = (body) => `<?xml version="1.0"?>\n<widget id="x">\n    <content src="index.html" />\n${body}</widget>\n`;
+  const fallback = (xml) => /<preference name="ErrorUrl" value="([^"]*)" \/>/.exec(patchConfigXml(xml, 'http://localhost:8100'))[1];
+
+  assert.equal(fallback(widget('')), 'https://localhost/index.html');
+  assert.equal(fallback(widget('    <preference name="AndroidInsecureFileModeEnabled" value="true" />\n    <preference name="scheme" value="app" />\n')),
+    'file:///android_asset/www/index.html');
+  assert.equal(fallback(widget('    <preference name="Scheme" value="http" />\n    <preference name="hostname" value="App.Local" />\n')),
+    'http://app.local/index.html');
+  assert.equal(fallback(widget('    <preference name="scheme" value="app" />\n')), 'https://localhost/index.html');
+  assert.equal(fallback(widget('').replace('index.html', '/inicio.html')), 'https://localhost/inicio.html');
+
+  // ErrorUrl do próprio app é trocado, não duplicado.
+  const own = patchConfigXml(widget('    <preference name="errorUrl" value="erro.html" />\n'), 'http://localhost:8100');
+  assert.equal(own.match(/ErrorUrl/gi).length, 1);
+
+  // --skip-prepare: config já com patch mantém o fallback do build anterior.
+  const once = patchConfigXml(widget(''), 'http://localhost:8100');
+  assert.equal(patchConfigXml(once, 'http://localhost:8100'), once);
+});
+
 test('config: carrega, normaliza bancos e resolve --db', () => {
   const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'devbridge-cfg-'));
   fs.mkdirSync(path.join(tmp, 'www/js'), { recursive: true });

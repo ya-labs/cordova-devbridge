@@ -23,7 +23,7 @@ WebView ── http://localhost:8100 ─ adb reverse ─► devbridge start
   └─ sqlitePlugin (nativo, o banco real do app)
 ```
 
-- **`devbuild`:** troca o `<content src>` **só no config.xml gerado** (`platforms/android/.../res/xml/config.xml`), passando a apontar para `http://localhost:8100/index.html`, e compila em debug. O `config.xml` versionado não muda. O próximo `cordova build` ou `cordova run` normal desfaz a troca.
+- **`devbuild`:** troca o `<content src>` **só no config.xml gerado** (`platforms/android/.../res/xml/config.xml`), passando a apontar para `http://localhost:8100/index.html`, e compila em debug. O `config.xml` versionado não muda. O próximo `cordova build` ou `cordova run` normal desfaz a troca. A mesma troca define o `ErrorUrl` com a URL inicial original do app: sem servidor, o APK abre o `www` empacotado nele.
 - **Fusão de pastas:** os arquivos vêm de `platform_www` (`cordova.js` e o JS dos plugins) com fallback para `www`. A fusão é por arquivo, então pastas com o mesmo nome nas duas árvores convivem.
 - **Injeção do client:** acontece só no `www/index.html`. Os templates `.html` do AngularJS chegam intactos.
 - **Banco:** o client usa a conexão que o próprio app já abriu (uma variável global como `db`). Se ela ainda não estiver aberta, por exemplo antes do login, abre o arquivo pelo nome. Quando o nome tem `*`, resolve o arquivo via `adb run-as`.
@@ -83,7 +83,7 @@ devbridge start
 devbridge build
 ```
 
-O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev cai numa página de erro de conexão que não tenta de novo sozinha. Se isso acontecer, com o `start` rodando, use `devbridge launch`, que fecha e reabre o app.
+O `build` só abre o app se o `start` já estiver no ar. Sem servidor, o APK dev abre o `www` empacotado no último `build`, sem live reload. Para voltar ao servidor, com o `start` rodando, use `devbridge launch`, que fecha e reabre o app.
 
 Depois disso é só editar `www/` (você ou o agente) e o app recarrega sozinho na mesma tela, porque o ui-router usa hash.
 
@@ -196,7 +196,7 @@ O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `
 
 - **Mudanças nativas:** plugin, `config.xml`, ícone e permissões exigem `devbridge build` de novo.
 - **Origem diferente:** no modo dev a origem é `http://localhost:8100`, e não `file://`. Por isso `localStorage` e IndexedDB ficam separados do build normal. SQLite, NativeStorage e arquivos não mudam, porque são nativos.
-- **Depende do cabo:** sem o cabo e sem o `devbridge start`, o APK dev não carrega (`devbridge launch` reabre o app depois que o servidor voltar). Para testar desconectado, gere um build normal (`cordova run android`).
+- **Sem cabo:** sem o cabo ou sem o `devbridge start`, o APK dev abre o `www` empacotado no último `devbridge build`, como um build normal. Ele não traz o que mudou depois do build, e o `localStorage` é o da origem original, não o de `http://localhost:8100`. O fallback só vale na abertura: ao tirar o cabo com o app aberto, feche e abra o app. Com o servidor de volta, `devbridge launch` reabre o app carregando dele. Para seguir com live reload sem cabo, use o adb por Wi-Fi (`adb pair`/`adb connect`, Android 11+); o `adb reverse` funciona do mesmo jeito.
 - **iOS:** não suportado; a ferramenta é só para Android.
 
 ## Testes
