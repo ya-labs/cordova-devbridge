@@ -23,7 +23,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   build [--no-install] [--skip-prepare]
                              gera e instala o APK dev (content src → servidor do PC);
                              só abre o app se o start estiver no ar
-  launch                     fecha e reabre o app no celular (sai da tela de erro de conexão)
+  launch                     fecha e reabre o app no celular (volta do www empacotado ao servidor)
   status                     app conectado, tela atual, conexões abertas
   reload                     recarrega o app
   logs [-f] [--level error,warn] [--since N]

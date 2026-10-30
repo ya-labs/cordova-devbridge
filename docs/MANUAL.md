@@ -216,7 +216,8 @@ Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `l
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
-| O app abre numa página de erro de conexão | APK dev aberto sem o `dvb start` | `dvb start` e depois `dvb launch` |
+| O app abre sem live reload, com o código do último build | APK dev aberto sem o `dvb start` ou sem o cabo (fallback para o `www` empacotado) | `dvb start` e depois `dvb launch` |
+| O app abre numa página de erro de conexão | APK gerado por uma versão do devbridge sem o fallback | `dvb build` de novo; até lá, `dvb start` e `dvb launch` |
 | `dvb status` diz que nenhum app está conectado, com o app aberto | celular bloqueado (WebView pausado), cabo solto ou `adb reverse` caiu | desbloqueie o celular; confira `adb devices` e `adb reverse --list`; o `start` refaz o reverse sozinho quando o cabo volta |
 | `INSTALL_FAILED_UPDATE_INCOMPATIBLE` no build | app instalado com outra assinatura | sincronize os dados e `adb uninstall <package>`; o banco local é apagado |
 | `{{expressões}}` cruas ou `executeSql` de `null` depois do reload | boot depende da rota inicial | `reloadKeepRoute: false` ou `reloadRestore` (seção 5); `dvb launch` para sair |

@@ -34,6 +34,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 
 - **Zero dependências.** Só Node 20+ e adb. Por isso a comunicação usa SSE + POST, e não WebSocket, e o MCP é escrito à mão.
 - **Patch só no `config.xml` gerado** (`platforms/android/app/src/main/res/xml/config.xml`), nunca no versionado. O cordova-android aceita um `<content src>` com esquema como URL inicial (`ConfigXmlParser.setStartUrl`). O acesso ao bridge segue o `<allow-navigation>` (`CordovaPlugin.shouldAllowBridgeAccess`). O próximo `cordova prepare` desfaz o patch, então nada vaza para o release.
+- **Fallback sem servidor:** o patch define o `ErrorUrl` com a URL inicial que o cordova-android usaria sem ele (`getLaunchUrlPrefix`: `file:///android_asset/www/` com `AndroidInsecureFileModeEnabled`, senão `scheme://hostname/`, padrão `https://localhost/`). Sem cabo ou sem `start`, o load de localhost falha e o `CordovaActivity.onReceivedError` abre o `www` empacotado no build; a navegação e o bridge para essa URL já são liberados pela política padrão do `PluginManager`. Vale só na abertura do app. Um `ErrorUrl` do próprio app é trocado no config gerado.
 - **Resolução por arquivo:** primeiro `platform_www`, depois `www`. Há app real com `www/plugins/cordova-plugin-advanced-http/`, com o mesmo nome do plugin Cordova, e uma fusão por diretório quebraria.
 - **O client é injetado só em `www/index.html`.** Os templates do AngularJS também são `.html` e chegam por XHR. Ele entra como primeiro script do `<head>`, para capturar logs do boot e continuar recebendo reload mesmo se o app quebrar.
 - **O client é ES5** (`var`, `function`), para não depender da versão do WebView.
@@ -80,7 +81,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **`pkill -f <padrão>`** com um padrão que aparece na linha do próprio shell mata o comando (exit 144). Mate pelo PID.
 - **`$!` de `cd dir && node ... &`** é o PID do subshell, e matar esse PID pode deixar o node vivo. Rode o node direto em background.
 - **Chrome headless via CDP:** no Node 20 é preciso `node --experimental-websocket`.
-- **APK dev aberto sem servidor:** o WebView mostra uma página de erro de conexão que não tenta de novo. A ordem certa é `start` → `build`. Se o app ficar preso nessa tela, rode `devbridge launch` com o servidor no ar; o `build` só reabre o app se o `start` responder.
+- **APK dev aberto sem servidor:** abre o `www` empacotado (fallback), sem live reload e sem client. A ordem certa é `start` → `build`; para voltar ao servidor, `devbridge launch` com o `start` no ar. O `build` só reabre o app se o `start` responder. APK gerado antes do fallback mostra o diálogo "Application Error" do Cordova.
 - **Testes no vm:** objetos criados dentro do vm têm outro `Object.prototype`, e o `deepStrictEqual` falha; compare por JSON. O client apaga `devbridge.reload` do `sessionStorage` no boot, então grave essa chave depois de subir o client.
 - **Chrome headless com captura falsa:** um `screencap` falso que resolve na hora faz os workers do espelho girarem em microtarefas e trava o event loop; dê um atraso.
 - **`adb exec-in`** volta antes de o aparelho terminar de gravar (250 a 500 ms com 0,3 a 5 MB): confira o tamanho com `stat` antes de seguir.

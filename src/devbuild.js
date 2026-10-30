@@ -9,15 +9,54 @@ const GENERATED_CONFIG = 'platforms/android/app/src/main/res/xml/config.xml';
 const MANIFEST = 'platforms/android/app/src/main/AndroidManifest.xml';
 const DEBUG_APK = 'platforms/android/app/build/outputs/apk/debug/app-debug.apk';
 
+const CONTENT_RE = /<content\s+src="([^"]*)"\s*\/>/;
+
+function preferences(xml) {
+  const prefs = {};
+  for (const [tag] of xml.matchAll(/<preference\b[^>]*>/g)) {
+    const name = /\bname="([^"]*)"/.exec(tag);
+    const value = /\bvalue="([^"]*)"/.exec(tag);
+    if (name && value) prefs[name[1].toLowerCase()] = value[1];
+  }
+  return prefs;
+}
+
+// A URL inicial que o cordova-android usaria sem o patch
+// (ConfigXmlParser.setStartUrl/getLaunchUrlPrefix): o www empacotado no APK.
+function bundledStartUrl(xml, src) {
+  if (/^[a-z-]+:\/\//.test(src)) return src;
+  const prefs = preferences(xml);
+  const file = src.replace(/^\//, '');
+  if (String(prefs.androidinsecurefilemodeenabled).toLowerCase() === 'true') return `file:///android_asset/www/${file}`;
+  let scheme = (prefs.scheme || 'https').toLowerCase();
+  if (scheme !== 'http' && scheme !== 'https') scheme = 'https';
+  return `${scheme}://${(prefs.hostname || 'localhost').toLowerCase()}/${file}`;
+}
+
+function appendToWidget(xml, tag) {
+  return xml.replace(/<\/widget>\s*$/, `    ${tag}\n</widget>\n`);
+}
+
 // Mexe só no config.xml GERADO: o próximo `cordova prepare` o regenera a
 // partir do config.xml versionado, então nada vaza para release.
+// Sem servidor (cabo solto, `start` parado), o load de localhost falha e o
+// CordovaActivity abre o ErrorUrl: o www empacotado no último build.
 function patchConfigXml(xml, devUrl) {
-  const content = `<content src="${devUrl}/index.html" />`;
-  if (!/<content\s+src="[^"]*"\s*\/>/.test(xml)) throw new Error('config.xml gerado não tem <content src>.');
-  let out = xml.replace(/<content\s+src="[^"]*"\s*\/>/, content);
+  const m = CONTENT_RE.exec(xml);
+  if (!m) throw new Error('config.xml gerado não tem <content src>.');
+  const devStart = `${devUrl}/index.html`;
+  let out = xml.replace(CONTENT_RE, `<content src="${devStart}" />`);
+  if (m[1] !== devStart) {
+    out = out.replace(/\s*<preference\b[^>]*\bname="errorurl"[^>]*>/gi, '');
+    out = appendToWidget(out, `<preference name="ErrorUrl" value="${bundledStartUrl(xml, m[1])}" />`);
+  }
   const nav = `<allow-navigation href="${devUrl}/*" />`;
-  if (!out.includes(nav)) out = out.replace(/<\/widget>\s*$/, `    ${nav}\n</widget>\n`);
+  if (!out.includes(nav)) out = appendToWidget(out, nav);
   return out;
+}
+
+function errorUrl(xml) {
+  return preferences(xml).errorurl || null;
 }
 
 function exec(cmd, args, cwd) {
@@ -37,8 +76,10 @@ async function devBuild(config, { install = true, prepare = true, log = console.
 
   const cfgFile = path.join(root, GENERATED_CONFIG);
   if (!fs.existsSync(cfgFile)) throw new Error(`${GENERATED_CONFIG} não existe. A plataforma android foi adicionada?`);
-  fs.writeFileSync(cfgFile, patchConfigXml(fs.readFileSync(cfgFile, 'utf8'), config.url));
+  const patched = patchConfigXml(fs.readFileSync(cfgFile, 'utf8'), config.url);
+  fs.writeFileSync(cfgFile, patched);
   log(`[devbridge] content src → ${config.url}/index.html`);
+  if (errorUrl(patched)) log(`[devbridge] sem servidor → ${errorUrl(patched)} (www empacotado neste build)`);
 
   const manifest = path.join(root, MANIFEST);
   if (fs.existsSync(manifest) && !/usesCleartextTraffic="true"/.test(fs.readFileSync(manifest, 'utf8'))) {
@@ -67,11 +108,12 @@ async function serverUp(port, timeoutMs = 1500) {
   }
 }
 
-// O APK dev sem servidor abre numa página de erro que não tenta de novo:
-// só abre o app se o `devbridge start` já estiver no ar.
+// O APK dev sem servidor abre o www empacotado, sem live reload: só abre o
+// app se o `devbridge start` já estiver no ar.
 async function launchIfServerUp(config, { log = console.log, isUp = serverUp, restart = adb.restart } = {}) {
   if (!(await isUp(config.port))) {
     log(`[devbridge] servidor não está rodando em ${config.url}; o app não foi aberto.`);
+    log('           Sem servidor, ele abre o www empacotado no APK, sem live reload.');
     log('           Rode "devbridge start" e depois "devbridge launch" (ou abra o app no celular).');
     return false;
   }
