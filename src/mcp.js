@@ -136,7 +136,7 @@ function buildTools(config) {
     },
     {
       name: 'db_restore',
-      description: 'Volta os bancos do app ao estado de um snapshot: fecha o app, troca os arquivos (apaga journal/wal que não estavam no snapshot) e reabre. Apaga as mudanças feitas depois do snapshot; fica em .devbridge/snapshot-history.log.',
+      description: 'Volta os bancos do app ao estado de um snapshot: fecha o app, deixa databases/ igual ao snapshot e reabre. Apaga os arquivos que o snapshot não tem (banco criado depois, como o de um usuário que logou, e journal/wal/shm) e lista os removidos; um snapshot feito com "db" só mexe nos arquivos daquele banco. Apaga as mudanças feitas depois do snapshot; fica em .devbridge/snapshot-history.log.',
       inputSchema: { type: 'object', properties: { name: { type: 'string' } }, required: ['name'] },
     },
     {

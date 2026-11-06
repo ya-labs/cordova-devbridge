@@ -50,7 +50,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   type "<TEXTO>" [--dom]     digita no campo com foco (acento vai pelo app)
   key <TECLA>                back, enter, del, tab, home, escape…
   db-snapshot <NOME> [--db X] salva os bancos do app em .devbridge/snapshots/<NOME>
-  db-restore <NOME>          volta os bancos ao snapshot (fecha e reabre o app)
+  db-restore <NOME>          deixa os bancos iguais ao snapshot, apagando os criados depois (fecha e reabre o app)
   db-snapshots               lista os snapshots
   screenshot [--out arq.png] captura a tela do celular
   mcp                        servidor MCP (stdio) para agentes de IA
