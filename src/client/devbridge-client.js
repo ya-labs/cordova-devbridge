@@ -227,6 +227,7 @@
     var msg = parts.join(' ');
     if (msg.length > 4000) msg = msg.slice(0, 4000) + '… [+' + (msg.length - 4000) + ' chars]';
     var entry = { level: level, msg: msg, ts: Date.now(), href: location.hash || location.pathname };
+    if (testTag) entry.test = testTag;
     var structured = null;
     try { structured = structuredArgs(args); } catch (e) { structured = null; }
     if (structured) entry.args = structured;
@@ -267,6 +268,7 @@
   // Cada chamada do app gera um evento "start" e um "end" (mesmo id), em lote
   // como os logs. O canal do próprio devbridge (/__devbridge/) fica de fora.
   var BODY_LIMIT = 32768;
+  var bodyLimit = BODY_LIMIT; // maior durante as rodadas de teste (TEST_BODY_LIMIT)
   var netQueue = [];
   var netTimer = null;
   var netSeq = 0;
@@ -293,7 +295,7 @@
 
   function typeOf(v) { return Object.prototype.toString.call(v).slice(8, -1); }
 
-  // Corpo como texto, cortado em BODY_LIMIT; binário vira só uma descrição.
+  // Corpo como texto, cortado em bodyLimit; binário vira só uma descrição.
   function bodyInfo(b) {
     if (b === undefined || b === null || b === '') return null;
     var text;
@@ -307,8 +309,8 @@
     else if (b.nodeType) text = '[Document]';
     else text = serialize(b);
     var out = { body: text, size: text.length };
-    if (text.length > BODY_LIMIT) {
-      out.body = text.slice(0, BODY_LIMIT);
+    if (text.length > bodyLimit) {
+      out.body = text.slice(0, bodyLimit);
       out.truncated = true;
     }
     return out;
@@ -344,11 +346,14 @@
     if (isOwn(abs)) return null;
     var id = ++netSeq;
     var b = bodyInfo(body);
-    pushNet({
+    var ev = {
       phase: 'start', id: id, via: via, method: String(method || 'GET').toUpperCase(), url: abs,
       local: abs.indexOf(location.origin + '/') === 0, ts: Date.now(), href: location.hash || location.pathname,
       request: { headers: headers || {}, body: b && b.body, size: b ? b.size : 0, truncated: !!(b && b.truncated) },
-    });
+    };
+    // A requisição pertence à etapa em que começou, mesmo que termine depois.
+    if (testTag) ev.test = testTag;
+    pushNet(ev);
     return id;
   }
 
@@ -807,6 +812,334 @@
     finish(true, value);
   }
 
+  // ---- testes do app ------------------------------------------------------
+  // Executor dos arquivos .devbridge/tests/*.test.js. O servidor manda o fonte
+  // (eval com sourceURL, fora do eval-history) e o caso, que fica só aqui: do
+  // caso, só o nome sai do app. Logs e requisições de uma etapa levam a marca
+  // "rodada/caso/etapa" (testTag), usada pelo servidor para mostrar a etapa.
+  var TEST_BODY_LIMIT = 262144;
+  var STEP_LIMIT = 60000;
+  var testTag = null;
+  var testDefs = {}; // arquivo -> { def, hash }
+  var testRun = null;
+  var loadingTest = null;
+
+  function errMsg(e) {
+    if (!e) return 'Erro desconhecido';
+    if (typeof e === 'string') return e;
+    return e.message || serialize(e);
+  }
+
+  function ensureRunner() {
+    if (window.__devbridgeRunner) return;
+    window.__devbridgeRunner = {
+      registrar: function (teste) {
+        if (!loadingTest) throw new Error('__devbridgeRunner.registrar só vale num arquivo de .devbridge/tests carregado pelo devbridge.');
+        if (!teste || !teste.nome) throw new Error('Teste sem nome.');
+        if (Object.prototype.toString.call(teste.etapas) !== '[object Array]' || !teste.etapas.length) throw new Error('Teste sem etapas: ' + teste.nome);
+        if (loadingTest.def) throw new Error('Um teste por arquivo: ' + loadingTest.file + ' já registrou "' + loadingTest.def.nome + '".');
+        loadingTest.def = teste;
+        return teste.nome;
+      },
+    };
+  }
+
+  function testMeta(file, def) {
+    return {
+      arquivo: file,
+      nome: String(def.nome),
+      descricao: def.descricao ? String(def.descricao) : '',
+      etapas: def.etapas.map(function (e) { return { nome: String(e.nome), tempoLimiteMs: e.tempoLimiteMs || STEP_LIMIT }; }),
+      analisaRespostas: typeof def.analisarResposta === 'function',
+    };
+  }
+
+  function loadTest(req) {
+    var cur = testDefs[req.file];
+    if (cur && cur.hash === req.hash) return testMeta(req.file, cur.def);
+    ensureRunner();
+    loadingTest = { file: req.file, def: null };
+    var got;
+    try {
+      (0, eval)(req.source + '\n//# sourceURL=devbridge-tests/' + req.file + '.test.js');
+    } finally {
+      got = loadingTest;
+      loadingTest = null;
+    }
+    if (!got.def) throw new Error(req.file + '.test.js não chamou __devbridgeRunner.registrar({ nome, etapas }).');
+    testDefs[req.file] = { def: got.def, hash: req.hash };
+    return testMeta(req.file, got.def);
+  }
+
+  // Funções do ctx, as mesmas da prova de conceito para os testes migrarem sem reescrita.
+  function dormir(ms) {
+    return new Promise(function (resolve) { setTimeout(resolve, ms); });
+  }
+
+  function texto(v) {
+    if (v === null || v === undefined) return '';
+    return String(v).replace(/<br\s*\/?>/gi, ' ').replace(/<[^>]*>/g, '').replace(/&nbsp;/g, ' ').replace(/\s+/g, ' ').trim();
+  }
+
+  function servico(nome) {
+    var injector = window.angular && window.angular.element(document.body).injector();
+    if (!injector) throw new Error('AngularJS ainda não iniciou no app.');
+    return injector.get(nome);
+  }
+
+  function estadoAtual() {
+    return servico('$state').current.name;
+  }
+
+  function esperar(condicao, tempoMs, descricao) {
+    var limite = Date.now() + (tempoMs || 30000);
+    return new Promise(function (resolve, reject) {
+      (function tentar() {
+        var v;
+        try { v = condicao(); } catch (e) { v = undefined; }
+        if (v) return resolve(v);
+        if (testRun && testRun.cancelada) return reject(new Error('Rodada cancelada.'));
+        if (Date.now() > limite) return reject(new Error('Tempo esgotado esperando ' + (descricao || 'condição') + '.'));
+        setTimeout(tentar, 250);
+      })();
+    });
+  }
+
+  // Escopo que declara a propriedade, pela árvore a partir do $rootScope (sem debugInfo).
+  function escopoCom(propriedade) {
+    var fila = [servico('$rootScope')];
+    while (fila.length) {
+      var escopo = fila.shift();
+      if (Object.prototype.hasOwnProperty.call(escopo, propriedade)) return escopo;
+      for (var filho = escopo.$$childHead; filho; filho = filho.$$nextSibling) fila.push(filho);
+    }
+    return null;
+  }
+
+  function aplicar(escopo, fn) {
+    var resultado;
+    if (escopo.$root.$$phase) resultado = fn();
+    else escopo.$apply(function () { resultado = fn(); });
+    return resultado;
+  }
+
+  function irPara(nomeEstado, tempoMs) {
+    var $state = servico('$state');
+    if ($state.current.name !== nomeEstado) aplicar(servico('$rootScope'), function () { $state.go(nomeEstado); });
+    return esperar(function () { return $state.current.name === nomeEstado; }, tempoMs || 15000, 'a tela ' + nomeEstado);
+  }
+
+  function withLimit(fn, ms, nome) {
+    return new Promise(function (resolve, reject) {
+      var timer = setTimeout(function () {
+        reject(new Error('Etapa "' + nome + '" passou do tempo limite de ' + (ms < 1000 ? ms + ' ms' : Math.round(ms / 1000) + ' s') + '.'));
+      }, ms);
+      Promise.resolve().then(fn).then(function (v) {
+        clearTimeout(timer);
+        resolve(v);
+      }, function (e) {
+        clearTimeout(timer);
+        reject(e);
+      });
+    });
+  }
+
+  function callHook(fn, ctx) {
+    if (typeof fn !== 'function') return Promise.resolve();
+    return Promise.resolve().then(function () { return fn(ctx); });
+  }
+
+  // Antes, etapas em sequência e depois (sempre). A etapa passa quando a promessa
+  // resolve; depois de uma falha (ou do cancelamento), as seguintes ficam puladas.
+  function executeTest(def, caso, r) {
+    var falhou = false;
+    var ctx = {
+      caso: caso,
+      dados: {},
+      publico: r.publico,
+      esperar: esperar,
+      dormir: dormir,
+      servico: servico,
+      escopoCom: escopoCom,
+      aplicar: aplicar,
+      irPara: irPara,
+      estadoAtual: estadoAtual,
+      texto: texto,
+      progresso: function (descricao) {
+        if (r.atual !== null) r.etapas[r.atual].detalhe = String(descricao);
+      },
+    };
+    function tag(step) { testTag = r.run + '/' + r.caso + '/' + step; }
+    function finish() {
+      tag('depois');
+      callHook(def.depois, ctx).then(null, function (e) {
+        r.erro = r.erro || 'Falha ao finalizar o teste: ' + errMsg(e);
+      }).then(function () {
+        r.atual = null;
+        r.fim = Date.now();
+        testTag = null;
+        flushLogs();
+        flushNet();
+      });
+    }
+    function step(i) {
+      if (i >= def.etapas.length) {
+        r.situacao = r.cancelada ? 'cancelada' : falhou ? 'falha' : 'ok';
+        return finish();
+      }
+      var etapa = r.etapas[i];
+      var d = def.etapas[i];
+      if (falhou || r.cancelada) {
+        etapa.situacao = 'pulada';
+        return step(i + 1);
+      }
+      etapa.situacao = 'rodando';
+      etapa.inicio = Date.now();
+      r.atual = i;
+      tag(i);
+      withLimit(function () { return d.executar(ctx); }, d.tempoLimiteMs || STEP_LIMIT, d.nome).then(function (detalhe) {
+        etapa.situacao = 'ok';
+        if (detalhe !== undefined && detalhe !== null && detalhe !== '') etapa.detalhe = typeof detalhe === 'string' ? detalhe : serialize(detalhe);
+      }, function (e) {
+        etapa.situacao = r.cancelada ? 'cancelada' : 'falha';
+        etapa.erro = errMsg(e);
+        falhou = true;
+      }).then(function () {
+        etapa.fim = Date.now();
+        etapa.duracaoMs = etapa.fim - etapa.inicio;
+        step(i + 1);
+      });
+    }
+    tag('antes');
+    callHook(def.antes, ctx).then(function () { step(0); }, function (e) {
+      r.situacao = 'erro';
+      r.erro = 'Falha no antes: ' + errMsg(e);
+      r.etapas.forEach(function (x) { if (x.situacao === 'aguardando') x.situacao = 'pulada'; });
+      finish();
+    });
+  }
+
+  function testState() {
+    if (!testRun) return null;
+    var r = testRun;
+    var tela = '';
+    try { tela = estadoAtual(); } catch (e) { tela = ''; }
+    return {
+      run: r.run, caso: r.caso, situacao: r.situacao, inicio: r.inicio, fim: r.fim, erro: r.erro,
+      atual: r.atual, telaAtual: tela, etapas: JSON.parse(JSON.stringify(r.etapas)), dados: cloneArg(r.publico, [], { n: 0 }, 0),
+    };
+  }
+
+  function startTest(req) {
+    var t = testDefs[req.file];
+    if (!t) throw new Error('Teste não carregado no app: ' + req.file);
+    if (testRun && !testRun.fim) throw new Error('Já existe um caso rodando no app.');
+    testRun = {
+      run: req.run, caso: req.caso, situacao: 'rodando', inicio: Date.now(), fim: null, erro: null,
+      cancelada: false, atual: null, publico: {},
+      etapas: t.def.etapas.map(function (e) {
+        return { nome: String(e.nome), situacao: 'aguardando', inicio: null, fim: null, duracaoMs: null, detalhe: '', erro: null };
+      }),
+    };
+    bodyLimit = TEST_BODY_LIMIT;
+    executeTest(t.def, req.dados || {}, testRun);
+    return testState();
+  }
+
+  // O app decide o que é erro numa resposta (ex.: HTTP 200 com corpo de erro).
+  function analyzeResponses(req) {
+    var t = testDefs[req.file];
+    if (!t || typeof t.def.analisarResposta !== 'function') return [];
+    var out = [];
+    (req.respostas || []).forEach(function (resp) {
+      if (out.length >= 50) return;
+      var achado;
+      try {
+        achado = t.def.analisarResposta(resp);
+      } catch (e) {
+        achado = 'Erro ao analisar a resposta: ' + errMsg(e);
+      }
+      if (achado === undefined || achado === null || achado === false || achado === '') return;
+      out.push({ id: resp.id, achado: typeof achado === 'string' ? achado : cloneArg(achado, [], { n: 0 }, 0) });
+    });
+    return out;
+  }
+
+  // localStorage e NativeStorage, que o snapshot de bancos não cobre.
+  function saveStorage(reply) {
+    var local = {};
+    for (var i = 0; i < localStorage.length; i++) {
+      var k = localStorage.key(i);
+      local[k] = localStorage.getItem(k);
+    }
+    var ns = window.NativeStorage;
+    if (!ns) return reply(true, { local: local, native: null });
+    ns.keys(function (keys) {
+      var native = {};
+      var left = keys.length;
+      if (!left) return reply(true, { local: local, native: native });
+      keys.forEach(function (key) {
+        ns.getItem(key, function (v) {
+          native[key] = v;
+          if (--left === 0) reply(true, { local: local, native: native });
+        }, function () {
+          if (--left === 0) reply(true, { local: local, native: native });
+        });
+      });
+    }, function (e) { reply(false, null, 'NativeStorage.keys falhou: ' + errMsg(e && (e.exception || e.code) ? e.exception || e.code : e)); });
+  }
+
+  function restoreStorage(saved, reply) {
+    localStorage.clear();
+    Object.keys(saved.local || {}).forEach(function (k) { localStorage.setItem(k, saved.local[k]); });
+    var ns = window.NativeStorage;
+    if (!ns || !saved.native) return reply(true, { local: Object.keys(saved.local || {}).length, native: null });
+    ns.keys(function (current) {
+      var ops = [];
+      current.forEach(function (k) {
+        if (!Object.prototype.hasOwnProperty.call(saved.native, k)) ops.push(function (ok, fail) { ns.remove(k, ok, fail); });
+      });
+      Object.keys(saved.native).forEach(function (k) {
+        ops.push(function (ok, fail) { ns.setItem(k, saved.native[k], ok, fail); });
+      });
+      var left = ops.length;
+      var errors = [];
+      function done() {
+        if (errors.length) return reply(false, null, 'NativeStorage: ' + errors.join('; '));
+        reply(true, { local: Object.keys(saved.local || {}).length, native: Object.keys(saved.native).length });
+      }
+      if (!left) return done();
+      ops.forEach(function (op) {
+        op(function () {
+          if (--left === 0) done();
+        }, function (e) {
+          errors.push(errMsg(e && (e.exception || e.code) ? e.exception || e.code : e));
+          if (--left === 0) done();
+        });
+      });
+    }, function (e) { reply(false, null, 'NativeStorage.keys falhou: ' + errMsg(e)); });
+  }
+
+  function runTestAction(req, reply) {
+    switch (req.action) {
+      case 'load': return reply(true, loadTest(req));
+      case 'start': return reply(true, startTest(req));
+      case 'state': return reply(true, testState());
+      case 'cancel':
+        if (testRun && !testRun.fim) testRun.cancelada = true;
+        return reply(true, testState());
+      case 'analyze': return reply(true, analyzeResponses(req));
+      case 'saveStorage': return saveStorage(reply);
+      case 'restoreStorage': return restoreStorage(req.salvo || {}, reply);
+      case 'end':
+        bodyLimit = BODY_LIMIT;
+        testTag = null;
+        return reply(true, { ok: true });
+      default:
+        return reply(false, null, 'Ação de teste desconhecida: ' + req.action);
+    }
+  }
+
   // ---- canal com o servidor --------------------------------------------
   function replyFor(id) {
     return function (ok, result, error, code) {
@@ -898,6 +1231,14 @@
       var req = JSON.parse(ev.data);
       try {
         runEval(req, replyFor(req.id));
+      } catch (e) {
+        replyFor(req.id)(false, null, e.message || String(e));
+      }
+    });
+    es.addEventListener('test', function (ev) {
+      var req = JSON.parse(ev.data);
+      try {
+        runTestAction(req, replyFor(req.id));
       } catch (e) {
         replyFor(req.id)(false, null, e.message || String(e));
       }

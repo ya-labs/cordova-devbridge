@@ -126,6 +126,7 @@ function makeStorage(obj) {
     getItem: (k) => (k in obj ? obj[k] : null),
     setItem: (k, v) => { obj[k] = String(v); },
     removeItem: (k) => { delete obj[k]; },
+    clear: () => { for (const k of Object.keys(obj)) delete obj[k]; },
     key: (i) => Object.keys(obj)[i] ?? null,
     get length() { return Object.keys(obj).length; },
   };

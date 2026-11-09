@@ -8,7 +8,7 @@ const http = require('node:http');
 const { loadConfig } = require('../src/config');
 const { DevServer } = require('../src/server');
 const { Api } = require('../src/api');
-const { NetworkLog, maskText, maskHeaders } = require('../src/network');
+const { NetworkLog, maskText, maskHeaders, fieldPatterns } = require('../src/network');
 const { networkLine, networkDetail } = require('../src/format');
 const { makeApp, runClient, until } = require('./helpers');
 
@@ -23,6 +23,32 @@ test('máscara: campos de senha/token em JSON, formulário, query e XML; cabeça
   assert.equal(maskText('{"nome":"sem segredo"}'), '{"nome":"sem segredo"}');
   assert.deepEqual(maskHeaders({ authorization: 'Bearer x', cookie: 'a=1', 'content-type': 'application/json' }),
     { authorization: '***', cookie: '***', 'content-type': 'application/json' });
+});
+
+test('máscara: campos extras da config (networkMaskFields) em SOAP, JSON e formulário', () => {
+  const soap = '<soapenv:Body><urn:consulta><urn:usr_mail>ana@x</urn:usr_mail><urn:usr_pass>S3nh@</urn:usr_pass><urn:dev_key>abc123</urn:dev_key><urn:op_tabela>rprvnd</urn:op_tabela></urn:consulta></soapenv:Body>';
+  assert.equal(maskText(soap), soap, 'sem a config, usr_pass não é reconhecido');
+  const p = fieldPatterns(['usr_pass', 'DEV_KEY', 'a.b']);
+  assert.equal(maskText(soap, p), '<soapenv:Body><urn:consulta><urn:usr_mail>ana@x</urn:usr_mail><urn:usr_pass>***</urn:usr_pass><urn:dev_key>***</urn:dev_key><urn:op_tabela>rprvnd</urn:op_tabela></urn:consulta></soapenv:Body>');
+  assert.equal(maskText('{"usr_pass":"x","senha":"y","axb":"z"}', p), '{"usr_pass":"***","senha":"***","axb":"z"}', 'nome com ponto é literal');
+  assert.equal(maskText('dev_key=123&n=1', p), 'dev_key=***&n=1');
+
+  const log = new NetworkLog({ maskFields: ['usr_pass'] });
+  log.add('c1', [{ phase: 'start', id: 1, via: 'advanced-http', method: 'POST', url: 'http://erp/ws?usr_pass=1', ts: 1, request: { body: soap } }]);
+  log.add('c1', [{ phase: 'end', id: 1, ts: 2, status: 200, response: { body: '<r><usr_pass>eco</usr_pass></r>' } }]);
+  const e = log.get(1);
+  assert.equal(e.url, 'http://erp/ws?usr_pass=***');
+  assert.match(e.request.body, /<urn:usr_pass>\*\*\*<\/urn:usr_pass>/);
+  assert.equal(e.response.body, '<r><usr_pass>***</usr_pass></r>');
+  const off = new NetworkLog({ mask: false, maskFields: ['usr_pass'] });
+  off.add('c1', [{ phase: 'start', id: 1, method: 'POST', url: 'http://erp', ts: 1, request: { body: soap } }]);
+  assert.equal(off.get(1).request.body, soap, 'networkMask false desliga também os extras');
+
+  const root = makeApp({ networkMaskFields: ['usr_pass', ' dev_key '] });
+  assert.deepEqual(loadConfig({ cwd: root }).networkMaskFields, ['usr_pass', 'dev_key']);
+  assert.deepEqual(loadConfig({ cwd: makeApp() }).networkMaskFields, []);
+  assert.throws(() => loadConfig({ cwd: makeApp({ networkMaskFields: 'usr_pass' }) }), /networkMaskFields/);
+  assert.throws(() => loadConfig({ cwd: makeApp({ networkMaskFields: [''] }) }), /networkMaskFields/);
 });
 
 test('NetworkLog: since traz chamadas que terminaram depois, filtros e limite de entradas', () => {

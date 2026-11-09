@@ -83,6 +83,7 @@ Daí sai a config:
 - **`name` com `*`:** para bancos com parte variável (usuário, tenant). O devbridge lista os arquivos do aparelho via `adb run-as` e escolhe o que casa. Se casar com mais de um e o app ainda não abriu a conexão (antes do login, por exemplo), o comando pede `--db <arquivo.db>`.
 - **Escrita e JavaScript no app:** sempre disponíveis, sem opção na config. A escrita no banco exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox "Escrita" do console) e vai para `.devbridge/sql-history.log`. O `dvb eval`, o `app_eval` do MCP e a linha de comando do console avaliam JavaScript no app; com isso o agente lê o estado do AngularJS (serviços pelo `injector`, `scope()` de um elemento) sem editar código. Toda expressão vai para `.devbridge/eval-history.log`. Configs antigas com `allowWrites` ou `allowEval` continuam válidas; os campos são ignorados.
 - **`networkMask`** (opcional, padrão `true`): esconde credenciais no inspetor de rede (cabeçalhos `Authorization`/`Cookie` e campos de senha ou token). Use `false` só se precisar ver o valor exato, por exemplo para depurar um login.
+- **`networkMaskFields`** (opcional, padrão `[]`): nomes de campo do seu app que carregam senha ou token sem ter isso no nome, por exemplo `["usr_pass", "dev_key"]` num envelope SOAP. O valor desses campos também vira `***`, para o agente (MCP), o console e a tela de testes não lerem a credencial. A troca vale a partir do próximo `dvb start`.
 
 Para conferir os arquivos que existem no aparelho (exige o APK debug instalado):
 
@@ -96,7 +97,7 @@ adb shell run-as com.exemplo.meuapp ls databases
 echo ".devbridge/" >> .gitignore
 ```
 
-Nela ficam o histórico de SQL de escrita, as cópias de banco e os screenshots. O `devbridge.config.json` pode ser versionado: não tem segredo.
+Nela ficam o histórico de SQL de escrita, as cópias de banco e os screenshots. O `devbridge.config.json` pode ser versionado: não tem segredo. Se o app tiver testes automatizados (seção 8), versione `.devbridge/tests/` com a regra da seção 8.1.
 
 ## 4. Primeiro uso
 
@@ -183,6 +184,7 @@ Abra `http://localhost:8100/__devbridge/` no navegador do PC:
 - logs do app ao vivo;
 - aba "Rede": as requisições do app ao backend; clique numa linha para ver cabeçalhos e corpos. "Só falhas" filtra status >= 400 e erros de rede; "Locais" inclui templates e scripts do próprio servidor;
 - aba "Storage": chaves e valores de `localStorage`, `sessionStorage` e NativeStorage (só leitura; gravar e apagar pelo `dvb storage` ou pelo `app_storage`);
+- botão "Testes": abre a tela de testes (`/__devbridge/tests`), com o histórico das rodadas e a rodada em andamento (seção 8);
 - clique na rota do app no indicador de status para ir a outra tela (Enter navega, Esc cancela);
 - uma linha de comando de JavaScript no rodapé do console do app: Enter executa no app, Shift+Enter quebra linha, ↑/↓ trazem as expressões anteriores;
 - com "escrita" ligada: duplo clique edita a célula, "+ Registro" inclui, ✕ exclui (com confirmação);
@@ -193,7 +195,7 @@ Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que
 
 ## 7. MCP para agentes de IA
 
-O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_tap`, `app_swipe`, `app_type`, `app_key`, `db_snapshot`, `db_restore`, `db_snapshots`, `app_storage`, `app_navigate`, `app_eval` e `db_exec`. `db_query` e `db_exec` aceitam um lote em `statements` (numa transação só), útil para o agente montar massa de teste numa chamada. Ele conversa com o `dvb start`, que precisa estar rodando.
+O `dvb mcp` expõe ao Claude Code (ou ao Codex) as ferramentas `app_status`, `app_reload`, `app_logs`, `app_network`, `app_network_entry`, `db_query`, `db_tables`, `db_schema`, `app_screenshot`, `app_tap`, `app_swipe`, `app_type`, `app_key`, `db_snapshot`, `db_restore`, `db_snapshots`, `app_storage`, `app_navigate`, `app_eval`, `db_exec`, `tests_list`, `tests_run`, `tests_status` e `tests_cancel`. `db_query` e `db_exec` aceitam um lote em `statements` (numa transação só), útil para o agente montar massa de teste numa chamada. Ele conversa com o `dvb start`, que precisa estar rodando.
 
 Registro, na raiz do app:
 
@@ -206,13 +208,135 @@ claude mcp add devbridge -- node ~/Documentos/GitHub/cordova-devbridge/bin/devbr
 - Se `claude` não existir no terminal (você usa só a extensão do VS Code), o binário fica em `~/.vscode/extensions/anthropic.claude-code-<versão>/resources/native-binary/claude`.
 - Para conferir: `claude mcp get devbridge` deve mostrar `Connected`. Na conversa, peça o `app_status`.
 
-## 8. Voltar ao APK normal
+## 8. Testes automatizados do app
+
+O devbridge roda no aparelho testes que o próprio app escreve. Cada etapa chama funções reais das telas (serviços do AngularJS, escopo do controller) em vez de simular toques. O devbridge não conhece o app: etapas, dados e o que conta como sucesso ficam nos arquivos de teste.
+
+### 8.1 Arquivos
+
+| Arquivo | Versionado | Conteúdo |
+|---|---|---|
+| `.devbridge/tests/<nome>.test.js` | sim | o teste; roda dentro do app |
+| `.devbridge/tests/<nome>.local.json` ou `casos.local.json` | não | os casos, um por execução (usuário, senha, código de acesso…) |
+
+Para versionar os testes e deixar o resto de `.devbridge/` fora do Git, troque a linha da seção 3.4 por:
+
+```gitignore
+.devbridge/*
+!.devbridge/tests/
+.devbridge/tests/*.local.json
+```
+
+### 8.2 Escrevendo o teste
+
+O arquivo chama `__devbridgeRunner.registrar` uma vez:
+
+```js
+(function () {
+  'use strict';
+  window.__devbridgeRunner.registrar({
+    nome: 'login',
+    descricao: 'Faz login e chega à home',
+    // opcional: preparo; se falhar, o caso termina como "erro" e as etapas ficam puladas
+    antes: function (ctx) {
+      return ctx.esperar(function () { return ctx.estadoAtual() === 'login'; }, 60000, 'a tela de login');
+    },
+    // opcional: roda sempre, mesmo depois de falha ou cancelamento
+    depois: function (ctx) {},
+    etapas: [
+      {
+        nome: 'Login',
+        tempoLimiteMs: 120000, // padrão 60000
+        executar: function (ctx) {
+          var tela = ctx.escopoCom('entrar');
+          ctx.aplicar(tela, function () {
+            tela.usuario = ctx.caso.usuario;
+            tela.senha = ctx.caso.senha;
+            tela.entrar();
+          });
+          return ctx.esperar(function () { return ctx.estadoAtual() === 'home'; }, 90000, 'a home')
+            .then(function () { return 'logado'; }); // o texto vira o detalhe da etapa
+        },
+      },
+    ],
+    // opcional: nos casos com falha, recebe cada resposta do período e devolve o problema (ou null)
+    analisarResposta: function (r) {
+      return r.status === 200 && /"erro"/.test(r.resposta || '') ? 'erro com HTTP 200: ' + r.resposta.slice(0, 300) : null;
+    },
+  });
+})();
+```
+
+A etapa passa quando a promessa resolve e falha quando rejeita, lança erro ou passa do `tempoLimiteMs`. Depois de uma falha, as etapas seguintes ficam `pulada`.
+
+O `ctx` tem:
+
+| Campo | Para quê |
+|---|---|
+| `caso` | o caso desta execução, inteiro (só existe dentro do app) |
+| `dados` | objeto livre para as etapas do caso trocarem dados |
+| `publico` | o que vai para o relatório e para o `tests_status` (não ponha credencial aqui) |
+| `esperar(condicao, tempoMs, descricao)` | promessa que resolve quando `condicao()` fica verdadeira; rejeita no tempo ou no cancelamento |
+| `dormir(ms)` | pausa |
+| `servico(nome)` | serviço do AngularJS pelo `injector` |
+| `estadoAtual()` / `irPara(estado, tempoMs)` | estado atual do ui-router e navegação até outro |
+| `escopoCom(propriedade)` | escopo que declara a propriedade, procurado a partir do `$rootScope` (dispensa o debugInfo) |
+| `aplicar(escopo, fn)` | roda `fn` dentro do `$apply` |
+| `texto(html)` | texto sem tags, para comparar mensagens |
+| `progresso(texto)` | mostra o que a etapa está fazendo agora |
+
+Logs e requisições feitos durante uma etapa ficam marcados com ela; o `tests_status` e a tela de testes mostram os de cada etapa. O arquivo entra no app por eval, com o nome `devbridge-tests/<nome>.test.js` nas stack traces e no DevTools; um app com `Content-Security-Policy` sem `'unsafe-eval'` não roda testes.
+
+### 8.3 Casos
+
+`<nome>.local.json` (só daquele teste) ou `casos.local.json` (de todos): uma lista, ou um objeto com a lista, e cada caso com um `nome` único.
+
+```json
+{ "casos": [
+  { "nome": "Homologação A", "usuario": "teste@a", "senha": "…" },
+  { "nome": "Homologação B", "usuario": "teste@b", "senha": "…" }
+] }
+```
+
+O caso vai para o app pelo canal do devbridge, sem passar pelo `eval-history.log`. Do caso, só o `nome` sai do app: andamento, relatório e histórico não têm os outros campos. Sem arquivo de casos, o teste roda uma vez com um caso vazio.
+
+### 8.4 Rodando
+
+```bash
+dvb test list                          # testes, etapas e casos
+dvb test run login                     # todos os casos; Ctrl+C cancela e restaura
+dvb test run login --case "Homologação A"
+dvb test status                        # tabela caso × etapa
+dvb test status --case 1 --step 1      # logs e requisições daquela etapa
+dvb test runs                          # histórico das rodadas gravadas
+dvb test status <ID> --case 2 --step 1 # etapa de uma rodada anterior
+```
+
+Pelo MCP: `tests_list` (também lista as últimas rodadas), `tests_run`, `tests_status` (com `waitMs` para esperar o fim; com `case` e `step` para a etapa; com `id` para uma rodada anterior) e `tests_cancel`.
+
+No navegador, o botão "Testes" do console abre `http://localhost:8100/__devbridge/tests`:
+- à esquerda, o histórico das rodadas (do mais novo ao mais antigo, agrupado por dia, com filtro por teste); a rodada em andamento fica no topo e a tela acompanha sozinha, mesmo se ela foi iniciada pelo MCP ou pela CLI;
+- no topo da rodada, indicadores: casos ok, etapas com falha, requisições com falha, logs de erro e problemas;
+- abas: Resumo (tabela caso × etapa; clique numa célula para abrir a etapa), Casos (linha do tempo de cada caso, com os logs e as requisições de cada etapa e os dados públicos), Problemas (tudo o que falhou, com link para a etapa), Logs e Requisições (com filtro por caso, nível, URL e só falhas; clique numa requisição para ver cabeçalhos e corpo, se ainda estiver no inspetor de rede) e JSON (o relatório, para copiar ou baixar);
+- "Nova rodada" escolhe o teste e os casos; "Rodar de novo" repete o teste e os casos de uma rodada.
+
+Uma rodada:
+1. guarda `localStorage` e NativeStorage do app e tira um snapshot completo dos bancos (o app fecha e reabre);
+2. roda os casos um por vez, mostrando a etapa atual, a duração e o erro;
+3. no fim de cada caso, junta os logs de erro e as requisições com falha; se o caso falhou e o teste tem `analisarResposta`, passa as respostas do período para ela;
+4. devolve o armazenamento e os bancos ao estado de antes, apagando os bancos criados na rodada (o app fecha e reabre de novo). Isso vale também para rodada com falha ou cancelada.
+
+Só uma rodada por vez. O relatório fica em `.devbridge/test-runs/<id>-<teste>.json`, com horários no fuso do PC, e guarda também os logs e o resumo das requisições (sem corpo) de cada etapa, para o histórico; o corpo só fica no inspetor de rede enquanto ele tiver a requisição. O log de cada etapa é o que o app escreveu e o agente o lê pelo `tests_status`, então não registre credenciais no console (a máscara vale só para a rede). O histórico de eventos das rodadas fica em `.devbridge/test-history.log`. Se a restauração der certo, o snapshot e a cópia do armazenamento são apagados; se falhar, ficam lá e o relatório diz como restaurar à mão.
+
+Durante a rodada, o app manda até 256 KB de cada corpo de requisição (32 KB fora dela), para respostas grandes poderem ser analisadas.
+
+## 9. Voltar ao APK normal
 
 O patch do APK dev fica só no `config.xml` gerado em `platforms/`. Qualquer `cordova build android` ou `cordova run android` refaz esse arquivo e gera o APK comum, que funciona sem cabo e sem servidor. Para voltar ao modo dev, `dvb build` de novo.
 
 Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `localStorage` e IndexedDB são separados entre os dois modos. SQLite, NativeStorage e arquivos são os mesmos.
 
-## 9. Solução de problemas
+## 10. Solução de problemas
 
 | Sintoma | Causa provável | O que fazer |
 |---|---|---|
@@ -232,6 +356,10 @@ Lembre que no modo dev a origem é `http://localhost:8100`, e não `file://`: `l
 | Depois do `db-restore` sumiu um banco do app | o restore deixa `databases/` igual ao snapshot e apaga o que foi criado depois dele (a saída lista os removidos) | tire o snapshot depois de criar esse banco, ou faça o snapshot só do banco que o teste altera (`--db`) |
 | `db-restore`/`db_restore` falha com `exec-in` ou tamanho diferente | adb antigo sem `exec-in`, ou o aparelho não terminou de gravar em 20 s | atualize o platform-tools; o app fica parado: rode o restore de novo ou `dvb launch` |
 | `type`/`app_type` com acento responde "Nenhum campo de texto com foco" | o texto com acento vai pelo app, no campo que tem o foco no WebView | toque no campo antes (`dvb tap`/`app_tap`); campo nativo (fora do WebView) só recebe ASCII, pelo adb |
+| `tests_run`/`dvb test run` responde "Nenhum app pronto" | o app não está aberto no modo dev, ou ainda não disparou `deviceready` | abra o app com o `dvb start` no ar e confira `dvb status` |
+| O teste aparece com "não chamou __devbridgeRunner.registrar" | erro de sintaxe no `.test.js` ou `registrar` dentro de código assíncrono | veja `dvb logs --level error`; chame `registrar` direto no arquivo |
+| Caso com "O app recarregou durante o caso" | a etapa salvou um arquivo de `www/` (live reload), chamou `location.reload` ou derrubou o app | evite reload durante o teste; o estado do caso fica só na memória do app |
+| "FALHA NA RESTAURAÇÃO" no fim da rodada | o app não voltou (cabo, `adb`) ou o NativeStorage recusou a gravação | siga a linha "Restaure à mão" do relatório: `dvb db-restore teste-<id>` e o armazenamento em `.devbridge/test-runs/<id>.storage.json` |
 | Mudança de CSS não aparece | o arquivo não está ligado por `<link>` no `index.html` | o devbridge recarrega a página nesse caso; confira `dvb logs` |
 | `AVISO: AndroidManifest sem usesCleartextTraffic` no build | falta o plugin de cleartext | instale `cordova-plugin-enable-cleartext-traffic` e rode `dvb build` |
 | Mudou plugin nativo, `config.xml`, ícone ou permissão e nada mudou | essas coisas vivem no APK, não no `www/` | `dvb build` |

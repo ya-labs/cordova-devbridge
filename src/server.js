@@ -13,7 +13,8 @@ const adb = require('./adb');
 const { Mirror } = require('./mirror');
 const { createSnapshot, restoreSnapshot, listSnapshots } = require('./snapshot');
 const { tapArgs, swipeArgs, textArgs, keyArgs, isPlainText } = require('./input');
-const { NetworkLog } = require('./network');
+const { NetworkLog, matchTag } = require('./network');
+const { TestRunner } = require('./tests');
 
 const CLIENT_JS = path.join(__dirname, 'client', 'devbridge-client.js');
 const UI_DIR = path.join(__dirname, 'ui');
@@ -26,7 +27,7 @@ function isDesktopBrowser(ua) {
 }
 
 class DevServer {
-  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {}, snapshotDeps = {}, adbRun = adb.run } = {}) {
+  constructor(config, { logger = console, watch = true, listDatabases = adb.listDatabases, screencap = adb.screencap, mirror = {}, snapshotDeps = {}, adbRun = adb.run, tests = {} } = {}) {
     this.config = config;
     this.screencap = screencap;
     this.mirror = new Mirror({ capture: () => this.screencap(), ...mirror });
@@ -46,13 +47,14 @@ class DevServer {
     };
     this.boot = crypto.randomBytes(4).toString('hex');
     this.clients = new Map();
-    this.readyClients = new Set();
+    this.readyClients = new Map(); // id -> momento do deviceready
     this.pending = new Map();
     this.logs = [];
     this.logSeq = 0;
-    this.network = new NetworkLog({ mask: config.networkMask !== false });
+    this.network = new NetworkLog({ mask: config.networkMask !== false, maskFields: config.networkMaskFields });
     this.reqSeq = 0;
     this.watcher = null;
+    this.tests = new TestRunner(this, tests);
     this.server = http.createServer((req, res) => this.handle(req, res).catch((err) => this.fail(res, 500, err.message)));
   }
 
@@ -121,6 +123,12 @@ class DevServer {
     return latest;
   }
 
+  // App pronto (deviceready) depois de `since`: o snapshot e o restore fecham e reabrem o app.
+  readySince(since) {
+    const c = this.activeClient();
+    return !!(c && this.readyClients.has(c.id) && this.readyClients.get(c.id) >= since);
+  }
+
   sendEvent(client, event, data) {
     client.res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
   }
@@ -151,14 +159,15 @@ class DevServer {
       const entry = { seq: ++this.logSeq, client: clientId, level: e.level, msg: e.msg, ts: e.ts, href: e.href };
       // args: os objetos logados, para a árvore do console web; CLI e MCP usam só msg.
       if (Array.isArray(e.args)) entry.args = e.args;
+      if (e.test) entry.test = String(e.test);
       this.logs.push(entry);
     }
     if (this.logs.length > MAX_LOGS) this.logs.splice(0, this.logs.length - MAX_LOGS);
   }
 
-  getLogs({ since = 0, level = null, limit = 500 } = {}) {
+  getLogs({ since = 0, level = null, limit = 500, test = null } = {}) {
     const levels = level ? new Set(String(level).split(',')) : null;
-    const items = this.logs.filter((l) => l.seq > since && (!levels || levels.has(l.level)));
+    const items = this.logs.filter((l) => l.seq > since && (!levels || levels.has(l.level)) && matchTag(l.test, test));
     return { last: this.logSeq, entries: items.slice(-limit) };
   }
 
@@ -363,13 +372,15 @@ class DevServer {
     if (p === '/__devbridge/events') return this.openEvents(req, res, url);
     if (p === '/__devbridge' || p === '/__devbridge/') return this.sendFile(res, path.join(UI_DIR, 'index.html'));
     if (p === '/__devbridge/mirror') return this.sendFile(res, path.join(UI_DIR, 'mirror.html'));
+    if (p === '/__devbridge/tests') return this.sendFile(res, path.join(UI_DIR, 'tests.html'));
     if (req.method === 'POST' && p === '/__devbridge/log') {
       const body = await readJson(req);
       this.addLogs(body.client, body.entries);
       return this.json(res, 200, { ok: true });
     }
     if (req.method === 'POST' && p === '/__devbridge/network') {
-      const body = await readJson(req);
+      // Nas rodadas de teste o corpo vai até 256 KB por requisição: o lote pode passar de 5 MB.
+      const body = await readJson(req, 64 * 1024 * 1024);
       this.network.add(body.client, body.events);
       return this.json(res, 200, { ok: true });
     }
@@ -389,7 +400,7 @@ class DevServer {
       const c = this.clients.get(body.client);
       if (c) c.href = body.href;
       // Guardado por id: o EventSource reconecta com o mesmo id e a marca continua valendo.
-      if (body.ready) this.readyClients.add(body.client);
+      if (body.ready) this.readyClients.set(body.client, Date.now());
       return this.json(res, 200, { ok: true });
     }
     if (p.startsWith('/__devbridge/')) return this.fail(res, 404, 'Rota devbridge desconhecida.');
@@ -416,7 +427,7 @@ class DevServer {
         case 'POST /reload':
           return this.json(res, 200, this.reload());
         case 'GET /logs':
-          return this.json(res, 200, this.getLogs({ since: Number(q.get('since') || 0), level: q.get('level'), limit: Number(q.get('limit') || 500) }));
+          return this.json(res, 200, this.getLogs({ since: Number(q.get('since') || 0), level: q.get('level'), limit: Number(q.get('limit') || 500), test: q.get('test') }));
         case 'GET /network':
           return this.json(res, 200, this.network.list({
             since: Number(q.get('since') || 0),
@@ -424,6 +435,7 @@ class DevServer {
             failed: q.get('failed') === '1' || q.get('failed') === 'true',
             local: q.get('local') === '1' || q.get('local') === 'true',
             limit: Number(q.get('limit') || 100),
+            test: q.get('test'),
           }));
         case 'GET /network/entry':
           return this.json(res, 200, this.network.get(q.get('id')));
@@ -443,6 +455,20 @@ class DevServer {
           return this.json(res, 200, await this.navigate(await readJson(req)));
         case 'POST /eval':
           return this.json(res, 200, await this.evaluate(await readJson(req)));
+        case 'GET /tests':
+          return this.json(res, 200, await this.tests.list());
+        case 'GET /tests/live':
+          return this.json(res, 200, await this.tests.live(q.get('after')));
+        case 'GET /tests/runs':
+          return this.json(res, 200, this.tests.runs({ teste: q.get('test'), limit: q.get('limit') }));
+        case 'POST /tests/run':
+          return this.json(res, 200, this.tests.run(await readJson(req)));
+        case 'POST /tests/cancel':
+          return this.json(res, 200, this.tests.cancel());
+        case 'GET /tests/status':
+          return this.json(res, 200, await this.tests.status({
+            id: q.get('id'), caso: q.get('case'), etapa: q.get('step'), after: q.get('after'), waitMs: q.get('wait'),
+          }));
         case 'GET /tables':
           return this.json(res, 200, await this.tables(q.get('db')));
         case 'GET /schema':

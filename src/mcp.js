@@ -2,7 +2,7 @@
 
 const readline = require('node:readline');
 const { Api } = require('./api');
-const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult } = require('./format');
+const { sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep } = require('./format');
 
 const PROTOCOL_VERSION = '2025-06-18';
 
@@ -58,7 +58,7 @@ function buildTools(config) {
     },
     {
       name: 'app_network_entry',
-      description: 'Detalhe de uma requisição do app_network: cabeçalhos e corpos do pedido e da resposta (JSON formatado). Credenciais aparecem como *** quando networkMask está ligado.',
+      description: 'Detalhe de uma requisição do app_network: cabeçalhos e corpos do pedido e da resposta (JSON formatado). Credenciais aparecem como *** quando networkMask está ligado (cabeçalhos de autenticação, campos de senha/token e os nomes de networkMaskFields).',
       inputSchema: {
         type: 'object',
         properties: {
@@ -187,6 +187,41 @@ function buildTools(config) {
         properties: { sql: { type: 'string' }, params: { type: 'array' }, statements: statementsProp, db: dbProp },
       },
     },
+    {
+      name: 'tests_list',
+      description: 'Lista os testes automatizados do app (.devbridge/tests/<nome>.test.js): etapas, tempo limite de cada uma e casos disponíveis (do <nome>.local.json ou casos.local.json, só os nomes), e as últimas rodadas gravadas em .devbridge/test-runs/ (id para o tests_status).',
+      inputSchema: { type: 'object', properties: {} },
+    },
+    {
+      name: 'tests_run',
+      description: 'Inicia uma rodada de um teste do app e devolve o id. Antes, guarda localStorage, NativeStorage e os bancos (snapshot); roda os casos um a um no app (as etapas chamam funções reais das telas) e no fim devolve o aparelho ao estado de antes, inclusive se falhar ou for cancelada. Fecha e reabre o app. Só uma rodada por vez; acompanhe com tests_status.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          test: { type: 'string', description: 'Nome do teste (arquivo sem .test.js), como no tests_list.' },
+          cases: { type: 'array', items: { type: 'string' }, description: 'Nomes dos casos; padrão: todos.' },
+        },
+        required: ['test'],
+      },
+    },
+    {
+      name: 'tests_status',
+      description: 'Tabela caso × etapa da rodada (situação, etapa atual, duração, erro), com logs de erro, requisições com falha e respostas com erro de cada caso. Com case e step, mostra os logs e as requisições daquela etapa (corpo com app_network_entry). waitMs espera a rodada terminar.',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          id: { type: 'string', description: 'Rodada anterior (lê o relatório em .devbridge/test-runs/, que guarda também os logs e as requisições de cada etapa). Padrão: a atual.' },
+          case: { type: 'string', description: 'Caso: número (1, 2…) ou nome.' },
+          step: { type: 'string', description: 'Etapa: número (1, 2…), nome, "antes" ou "depois". Exige case.' },
+          waitMs: { type: 'number', description: 'Espera até a rodada terminar, no máximo este tempo (até 120000).' },
+        },
+      },
+    },
+    {
+      name: 'tests_cancel',
+      description: 'Cancela a rodada: o caso atual para na próxima espera do teste, os seguintes são pulados e o aparelho é restaurado. Acompanhe a restauração com tests_status.',
+      inputSchema: { type: 'object', properties: {} },
+    },
   ];
   return tools;
 }
@@ -247,6 +282,19 @@ async function callTool(api, name, args) {
     }
     case 'db_schema':
       return text(JSON.stringify(await api.schema(args.db, args.table), null, 2));
+    case 'tests_list':
+      return text(testsList(await api.tests()));
+    case 'tests_run': {
+      const run = await api.testRun({ test: args.test, cases: args.cases });
+      return text(`Rodada ${run.id} iniciada (${run.casos.length} caso(s)). Acompanhe com tests_status (waitMs espera o fim).\n\n${testsStatus(run)}`);
+    }
+    case 'tests_status': {
+      if (args.step !== undefined && args.case === undefined) throw new Error('Informe também o case.');
+      const r = await api.testStatus({ id: args.id, case: args.case, step: args.step, waitMs: args.waitMs });
+      return text(r.etapaIndice !== undefined ? testStep(r) : testsStatus(r));
+    }
+    case 'tests_cancel':
+      return text(`Cancelando a rodada ${(await api.testCancel()).id}: o aparelho será restaurado. Acompanhe com tests_status.`);
     case 'app_screenshot': {
       const png = await api.screenshot();
       return { content: [{ type: 'image', data: png.toString('base64'), mimeType: 'image/png' }] };
@@ -272,7 +320,7 @@ function startMcp(config, { input = process.stdin, output = process.stdout } = {
             protocolVersion: params.protocolVersion || PROTOCOL_VERSION,
             capabilities: { tools: {} },
             serverInfo: { name: 'cordova-devbridge', version: require('../package.json').version },
-            instructions: `App Cordova em ${config.root}. Fluxo: editar www/ → app_reload → app_logs/app_network/db_query/app_screenshot para validar. Requer "devbridge start" rodando.`,
+            instructions: `App Cordova em ${config.root}. Fluxo: editar www/ → app_reload → app_logs/app_network/db_query/app_screenshot para validar. Testes do app: tests_list → tests_run → tests_status. Requer "devbridge start" rodando.`,
           };
           break;
         case 'ping':
