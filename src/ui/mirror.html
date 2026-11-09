@@ -5,68 +5,132 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Tela do celular · Devbridge</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%233b6ef5'/%3E%3Crect x='10' y='5' width='12' height='22' rx='2.5' stroke='white' stroke-width='2.5' fill='none'/%3E%3C/svg%3E">
+<script>
+  try { var t = JSON.parse(localStorage.getItem('devbridge.theme')); if (t === 'light' || t === 'dark') document.documentElement.setAttribute('data-theme', t); } catch (e) {}
+</script>
 <style>
   :root {
-    --bg: #0b0d12; --bar: #12151c; --line: #232833; --text: #e5e8ee; --muted: #8b94a4; --faint: #5d6575;
-    --accent: #6b92ff; --ok: #4ccb84; --warn: #e9b44c; --danger: #f27052;
+    --bg: #f4f5fa; --surface: #fff; --surface-2: #f7f8fc; --surface-3: #eceef6;
+    --line: #e0e4ef; --text: #202638; --muted: #64708a; --faint: #77839a;
+    --accent: #7058e8; --accent-soft: #efebff; --ok: #1d9a68; --warn: #a57424; --danger: #c94e3c;
     --sans: system-ui, -apple-system, "Segoe UI", Roboto, Ubuntu, sans-serif;
+    --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    color-scheme: light;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0c101b; --surface: #131927; --surface-2: #192132; --surface-3: #232d42;
+      --line: #273247; --text: #edf0f7; --muted: #a0acc0; --faint: #8190aa;
+      --accent: #a69bff; --accent-soft: #292541; --ok: #54d6a3; --warn: #edc178; --danger: #ff917e;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #0c101b; --surface: #131927; --surface-2: #192132; --surface-3: #232d42;
+    --line: #273247; --text: #edf0f7; --muted: #a0acc0; --faint: #8190aa;
+    --accent: #a69bff; --accent-soft: #292541; --ok: #54d6a3; --warn: #edc178; --danger: #ff917e;
     color-scheme: dark;
   }
   * { box-sizing: border-box; }
   html, body { height: 100%; margin: 0; }
-  body { background: radial-gradient(ellipse at top, #161b26 0%, var(--bg) 60%); color: var(--text); font: 13px/1.4 var(--sans); display: grid; grid-template-rows: auto 1fr; overflow: hidden; -webkit-font-smoothing: antialiased; }
-  svg { width: 16px; height: 16px; flex: none; }
-
-  header { display: flex; align-items: center; gap: 8px; padding: 8px 10px; background: var(--bar); border-bottom: 1px solid var(--line); }
-  .live { display: inline-flex; align-items: center; gap: 7px; font-weight: 600; min-width: 0; }
-  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; position: relative; }
-  .live.on .dot { background: var(--ok); }
-  .live.on .dot::after { content: ""; position: absolute; inset: -4px; border-radius: 50%; border: 2px solid var(--ok); opacity: 0; animation: ping 2s ease-out infinite; }
+  body { background: var(--bg); color: var(--text); font: 14px/1.5 var(--sans); display: grid; grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); overflow: hidden; -webkit-font-smoothing: antialiased; }
+  button, a { -webkit-tap-highlight-color: transparent; }
+  svg { width: 17px; height: 17px; flex: none; }
+  button, a { font: inherit; }
+  header { display: flex; align-items: center; gap: 24px; padding: 16px 24px; min-height: 76px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .brand { display: flex; align-items: center; gap: 12px; flex: 1; min-width: 0; }
+  .logo { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 12px; background: var(--accent); color: var(--bg); flex: none; }
+  .logo svg { width: 22px; height: 22px; }
+  .brand b { display: block; font-size: 16px; letter-spacing: -.02em; }
+  .brand small { display: block; color: var(--muted); font-size: 11.5px; }
+  nav { display: flex; gap: 8px; }
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 9px; min-height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--line); background: var(--surface); color: var(--text); cursor: pointer; text-decoration: none; font-size: 12.5px; font-weight: 550; white-space: nowrap; transition: background .15s, border-color .15s; }
+  .btn svg { color: var(--muted); }
+  .btn:hover { background: var(--surface-2); border-color: var(--faint); }
+  .btn:focus-visible, #screen:focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+  .btn.on { color: var(--accent); background: var(--accent-soft); border-color: color-mix(in srgb, var(--accent) 45%, var(--line)); }
+  .btn.on svg { color: var(--accent); }
+  .icon-btn { width: 40px; padding: 0; background: transparent; border-color: transparent; }
+  main { display: grid; grid-template-rows: auto minmax(0, 1fr); min-height: 0; min-width: 0; }
+  .mirror-toolbar { display: flex; align-items: center; min-width: 0; gap: 24px; padding: 16px 24px; background: var(--surface); border-bottom: 1px solid var(--line); }
+  .capture-status { display: grid; gap: 6px; min-width: 0; flex: 1; }
+  .status-line { display: flex; align-items: center; gap: 12px; }
+  .live { display: inline-flex; align-items: center; gap: 8px; font-size: 12.5px; font-weight: 600; min-width: 0; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; background: var(--faint); flex: none; position: relative; }
+  .live.on .dot { background: var(--ok); box-shadow: 0 0 0 4px color-mix(in srgb, var(--ok) 12%, transparent); }
   .live.paused .dot { background: var(--warn); }
   .live.err .dot { background: var(--danger); }
-  @keyframes ping { 0% { transform: scale(.6); opacity: .7; } 80%, 100% { transform: scale(1.5); opacity: 0; } }
-  .meta { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
-  .route { color: var(--muted); font: 11.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; flex: 1; }
-  .btn { display: inline-grid; place-items: center; width: 30px; height: 30px; border-radius: 7px; border: 1px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
-  .btn:hover { background: #1d222d; color: var(--text); border-color: var(--line); }
-  .btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
-  .btn.on { color: var(--accent); border-color: var(--accent); }
-  .btn svg { width: 16px; height: 16px; }
+  .meta { color: var(--faint); font-size: 11.5px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .route { display: block; color: var(--muted); font: 11.5px/1.5 var(--mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+  .route:empty { display: none; }
+  .capture-actions { display: flex; align-items: center; min-width: 0; gap: 8px; }
+  .viewport { position: relative; display: grid; place-items: center; min-height: 0; min-width: 0; padding: 24px; overflow: hidden; background-image: radial-gradient(var(--line) .7px, transparent .7px); background-size: 18px 18px; }
+  .phone { position: relative; width: 100%; height: 100%; min-height: 0; min-width: 0; display: flex; align-items: center; justify-content: center; }
+  #screen { display: block; width: auto; height: auto; max-height: 100%; max-width: 100%; min-width: 0; min-height: 0; object-fit: contain; border: 0; border-radius: 16px; background: #080c15; box-shadow: 0 0 0 8px #080c15, 0 24px 60px rgba(0, 0, 0, .24), 0 0 0 9px var(--line); }
+  #screen:not([src]) { visibility: hidden; }
   .phone.control #screen { cursor: crosshair; touch-action: none; user-select: none; }
-
-  main { display: grid; place-items: center; padding: 14px; min-height: 0; position: relative; }
-  .phone { position: relative; padding: 8px; border-radius: 26px; background: #050608; box-shadow: 0 20px 60px rgba(0, 0, 0, .6), inset 0 0 0 1px #2a2f3a; max-height: 100%; display: flex; }
-  #screen { display: block; max-height: calc(100vh - 46px - 28px - 16px); max-width: calc(100vw - 28px - 16px); border-radius: 19px; background: #000; min-width: 120px; min-height: 240px; object-fit: contain; }
   .phone.stale #screen { filter: grayscale(.6) brightness(.6); transition: filter .4s; }
-
   .overlay { position: absolute; inset: 0; display: none; place-items: center; text-align: center; padding: 24px; }
   .overlay.show { display: grid; }
-  .overlay > div { max-width: 280px; background: rgba(18, 21, 28, .92); border: 1px solid var(--line); border-radius: 14px; padding: 18px 16px; box-shadow: 0 12px 40px rgba(0, 0, 0, .5); }
-  .overlay strong { display: block; font-size: 14px; margin-bottom: 4px; }
-  .overlay p { margin: 0; color: var(--muted); font-size: 12.5px; overflow-wrap: anywhere; }
-  .spinner { width: 22px; height: 22px; margin: 0 auto 10px; border: 3px solid rgba(255, 255, 255, .15); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
+  .overlay > div { max-width: 340px; background: var(--surface); border: 1px solid var(--line); border-radius: 18px; padding: 28px; box-shadow: 0 16px 48px rgba(0, 0, 0, .15); }
+  .overlay strong { display: block; font-size: 17px; margin-bottom: 8px; letter-spacing: -.02em; }
+  .overlay p { margin: 0; color: var(--muted); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+  .spinner { width: 28px; height: 28px; margin: 0 auto 20px; border: 3px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; }
   @keyframes spin { to { transform: rotate(360deg); } }
-  .toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); background: #1d2330; border: 1px solid var(--line); padding: 6px 12px; border-radius: 999px; font-size: 12px; opacity: 0; transition: opacity .2s; pointer-events: none; }
+  .toast { position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 32px); background: var(--surface); border: 1px solid var(--line); padding: 10px 18px; border-radius: 12px; font-size: 12px; text-align: center; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); opacity: 0; transition: opacity .2s; pointer-events: none; }
   .toast.show { opacity: 1; }
+  @media (max-width: 700px) {
+    header { padding: 12px 16px; gap: 12px; min-height: 68px; }
+    .mirror-toolbar { padding: 14px 16px; gap: 14px; flex-wrap: wrap; }
+    .capture-status { flex-basis: 100%; }
+    .capture-actions { width: 100%; }
+    .capture-actions .btn { flex: 1 1 0; min-width: 0; min-height: 56px; flex-direction: column; gap: 4px; padding: 6px; font-size: 11.5px; }
+    .viewport { padding: 18px; }
+    nav .btn span { display: none; }
+    nav .btn { width: 40px; padding: 0; }
+    .brand small { font-size: 10.5px; }
+  }
+  @media (max-height: 520px) and (min-width: 701px) {
+    header { min-height: 60px; padding: 10px 20px; }
+    .mirror-toolbar { padding: 10px 20px; }
+    .viewport { padding: 14px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
 </style>
 </head>
 <body>
 <header>
-  <span class="live" id="live"><span class="dot"></span><span id="liveText">conectando…</span></span>
-  <span class="meta" id="fps"></span>
-  <span class="route" id="route" title="Tela atual do app"></span>
-  <button class="btn" id="control" title="Controlar o celular: clique toca, arraste desliza, teclado digita (Esc = voltar)">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L4.6 15.9a1.5 1.5 0 0 1 2.3-1.9L9 16"/></svg>
-  </button>
-  <button class="btn" id="pause" title="Pausar (espaço)"></button>
-  <button class="btn" id="save" title="Salvar quadro como PNG">
-    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg>
-  </button>
+  <div class="brand">
+    <span class="logo"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="6" y="2" width="12" height="20" rx="3"/><path d="M10 18h4"/></svg></span>
+    <div><b>Devbridge</b><small>Tela do celular</small></div>
+  </div>
+  <nav aria-label="Outras telas">
+    <a class="btn" href="/__devbridge/" target="devbridge-console" title="Abrir console"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="m7 9 3 3-3 3M13 15h4"/></svg><span>Console</span></a>
+    <a class="btn" href="/__devbridge/tests" target="devbridge-tests" title="Abrir testes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6M10 3v6l-5 9a2 2 0 0 0 1.8 3h10.4A2 2 0 0 0 19 18l-5-9V3"/><path d="M7.5 14h9"/></svg><span>Testes</span></a>
+  </nav>
+  <button class="btn icon-btn" id="theme" title="Tema" aria-label="Alterar tema"></button>
 </header>
 <main>
-  <div class="phone" id="phone"><img id="screen" alt="Tela do celular ao vivo"></div>
-  <div class="overlay show" id="overlay"><div><div class="spinner" id="spin"></div><strong id="ovTitle">Conectando ao celular…</strong><p id="ovText">A primeira captura leva cerca de 1 s.</p></div></div>
-  <div class="toast" id="toast"></div>
+  <div class="mirror-toolbar">
+    <div class="capture-status">
+      <div class="status-line"><span class="live" id="live" role="status"><span class="dot"></span><span id="liveText">Conectando…</span></span><span class="meta" id="fps"></span></div>
+      <span class="route" id="route" title="Tela atual do app"></span>
+    </div>
+    <div class="capture-actions" role="group" aria-label="Ações do espelhamento">
+      <button class="btn" id="control" title="Controlar o celular: clique toca, arraste desliza, teclado digita (Esc = voltar)" aria-pressed="false">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11V5.5a1.5 1.5 0 0 1 3 0V11m0-1.5a1.5 1.5 0 0 1 3 0V11m0-.5a1.5 1.5 0 0 1 3 0V15a6 6 0 0 1-6 6h-.5a6 6 0 0 1-4.6-2.2L4.6 15.9a1.5 1.5 0 0 1 2.3-1.9L9 16"/></svg><span id="controlLabel">Controlar</span>
+      </button>
+      <button class="btn" id="pause" title="Pausar (espaço)" aria-pressed="false"></button>
+      <button class="btn" id="save" title="Salvar quadro como PNG"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12m0 0-4-4m4 4 4-4M5 21h14"/></svg><span>Salvar PNG</span></button>
+    </div>
+  </div>
+  <div class="viewport">
+    <div class="phone" id="phone"><img id="screen" alt="Tela do celular ao vivo" tabindex="0"></div>
+    <div class="overlay show" id="overlay" role="status"><div><div class="spinner" id="spin"></div><strong id="ovTitle">Conectando ao celular…</strong><p id="ovText">A primeira captura leva cerca de 1 s.</p></div></div>
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div>
 </main>
 <script>
 (function () {
@@ -74,6 +138,23 @@
   var $ = function (id) { return document.getElementById(id); };
   var ICON_PAUSE = '<svg viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="5" width="4" height="14" rx="1"/><rect x="14" y="5" width="4" height="14" rx="1"/></svg>';
   var ICON_PLAY = '<svg viewBox="0 0 24 24" fill="currentColor"><path d="M7 4.5v15a1 1 0 0 0 1.5.86l12.5-7.5a1 1 0 0 0 0-1.72L8.5 3.64A1 1 0 0 0 7 4.5z"/></svg>';
+  var themes = ['auto', 'light', 'dark'];
+  var theme = 'auto';
+  try { var savedTheme = JSON.parse(localStorage.getItem('devbridge.theme')); if (themes.indexOf(savedTheme) >= 0) theme = savedTheme; } catch (e) {}
+  function applyTheme(value) {
+    if (value === 'auto') document.documentElement.removeAttribute('data-theme');
+    else document.documentElement.setAttribute('data-theme', value);
+    var symbol = value === 'light' ? '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M2 12h2M20 12h2M5 5l1.5 1.5M17.5 17.5 19 19M5 19l1.5-1.5M17.5 6.5 19 5"/>' : value === 'dark' ? '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>' : '<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>';
+    $('theme').innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">' + symbol + '</svg>';
+    $('theme').title = 'Tema: ' + ({ auto: 'automático', light: 'claro', dark: 'escuro' })[value] + ' (clique para trocar)';
+    $('theme').setAttribute('aria-label', $('theme').title);
+  }
+  $('theme').onclick = function () {
+    theme = themes[(themes.indexOf(theme) + 1) % themes.length];
+    try { localStorage.setItem('devbridge.theme', JSON.stringify(theme)); } catch (e) {}
+    applyTheme(theme);
+  };
+  applyTheme(theme);
   var seq = 0;
   var paused = false;
   var running = false;
@@ -148,7 +229,8 @@
 
   function setPaused(p) {
     paused = p;
-    $('pause').innerHTML = p ? ICON_PLAY : ICON_PAUSE;
+    $('pause').innerHTML = (p ? ICON_PLAY : ICON_PAUSE) + '<span>' + (p ? 'Retomar' : 'Pausar') + '</span>';
+    $('pause').setAttribute('aria-pressed', String(p));
     $('pause').title = p ? 'Retomar (espaço)' : 'Pausar (espaço)';
     if (p) {
       setLive('paused', 'Pausado');
@@ -214,6 +296,9 @@
   function setControl(on) {
     control = on;
     $('control').classList.toggle('on', on);
+    $('control').setAttribute('aria-pressed', String(on));
+    $('controlLabel').textContent = on ? 'Controlando' : 'Controlar';
+    if (on) $('screen').focus({ preventScroll: true });
     $('phone').classList.toggle('control', on);
     toast(on ? 'Controle ligado: clique toca, arraste desliza, teclado digita' : 'Controle desligado');
   }
@@ -223,6 +308,7 @@
   $('screen').addEventListener('pointerdown', function (ev) {
     if (!control) return;
     ev.preventDefault();
+    $('screen').focus({ preventScroll: true });
     drag = { p: devicePoint(ev), t: Date.now() };
   });
   $('screen').addEventListener('pointerup', function (ev) {
@@ -253,6 +339,7 @@
     toast('Quadro salvo');
   };
   document.addEventListener('keydown', function (ev) {
+    if (ev.target.closest && ev.target.closest('button, a, input, select, textarea')) return;
     // Com controle ligado o teclado é do celular (inclusive o espaço); letras se juntam em um texto só.
     if (control && !ev.ctrlKey && !ev.metaKey && !ev.altKey) {
       if (KEYMAP[ev.key]) {
