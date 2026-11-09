@@ -142,7 +142,7 @@ devbridge test runs                                # histórico das rodadas grav
 devbridge screenshot
 ```
 
-**Console web:** `http://localhost:8100/__devbridge/`. Clique numa tabela para navegar por ela. Com "escrita" ligada, a grade da tabela aberta permite:
+**Console web:** `http://localhost:8100/__devbridge/`. No topo ficam o estado do app e as ações no app (Recarregar, Tela, Testes); abaixo, as abas Banco (banco, "Modo escrita", tabelas, consulta SQL e resultado), Console, Rede e Storage, cada uma com a tela inteira e os seus filtros (Alt+1 a Alt+4 trocam de aba). Clique numa tabela para navegar por ela. Com o "Modo escrita" ligado, a grade da tabela aberta permite:
 - **editar:** duplo clique na célula; Enter grava, Esc cancela, e `NULL` grava nulo;
 - **incluir:** "+ Registro" abre uma linha nova no topo; campo vazio usa o valor padrão da coluna (e o autoincremento), e `NULL` grava nulo; Enter ou ✓ salva;
 - **excluir:** o ✕ da linha apaga pelo `rowid`, depois de confirmar.
