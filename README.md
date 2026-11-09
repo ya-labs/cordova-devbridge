@@ -133,6 +133,9 @@ devbridge pull-db --db user                        # copia o .db para .devbridge
 devbridge db-snapshot antes-do-pedido              # salva os bancos do app (fecha e reabre o app)
 devbridge db-restore antes-do-pedido               # deixa databases/ igual ao snapshot (apaga bancos criados depois)
 devbridge db-snapshots
+devbridge test list                                # testes do app em .devbridge/tests
+devbridge test run login --case "Homologação A"   # roda e restaura o aparelho no fim
+devbridge test status --case 1 --step 1            # logs e requisições de uma etapa
 devbridge screenshot
 ```
 
@@ -143,9 +146,11 @@ devbridge screenshot
 
 Ctrl+Enter executa o SQL.
 
-**Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo, e o servidor guarda as 500 requisições mais recentes.
+**Rede:** a aba "Rede", ao lado do console do app, lista as requisições; clique numa linha para ver cabeçalhos e corpos (JSON vira árvore). Uma requisição pendente é atualizada no lugar quando termina. Por padrão, a lista esconde as requisições ao próprio servidor de desenvolvimento (templates, scripts) que deram certo; "Locais" mostra todas. O app manda no máximo 32 KB de cada corpo (256 KB durante uma rodada de testes), e o servidor guarda as 500 requisições mais recentes.
 
 **Storage:** a aba "Storage" lista as chaves de `localStorage`, `sessionStorage` ou NativeStorage, com tamanho e prévia; clique numa chave para ver o valor (JSON vira árvore). Ela é só leitura e lê ao abrir a aba ou em "Atualizar"; gravar e apagar ficam no MCP e na CLI. Chaves `devbridge.*` são do próprio devbridge (`reloadRestore`) e não podem ser alteradas.
+
+**Testes:** a aba "Testes" escolhe o teste e os casos, roda e mostra a tabela caso × etapa ao vivo (situação, etapa atual, duração, erro). Clique numa célula para ver os logs e as requisições daquela etapa.
 
 **Rota:** clique no caminho do app no indicador de status (topo) para editar a rota; Enter leva o app até ela.
 
@@ -189,8 +194,26 @@ Ferramentas expostas:
 - `app_navigate` (leva o app a uma rota e diz se ele redirecionou)
 - `app_eval`
 - `db_exec` (escrita); `db_query` e `db_exec` aceitam `statements` para um lote numa transação só
+- `tests_list`, `tests_run`, `tests_status` e `tests_cancel` (testes automatizados do app; veja abaixo)
 
 O ciclo esperado do agente é: editar `www/` → `app_reload` → `app_logs` / `app_network` / `db_query` / `app_screenshot` para validar.
+
+## Testes automatizados do app
+
+O app escreve os testes em `.devbridge/tests/<nome>.test.js`: cada arquivo roda dentro do app e registra etapas que chamam funções reais das telas. Os casos (usuário, senha…) ficam num `.local.json` fora do Git, um por execução, e só o nome do caso sai do app.
+
+```js
+window.__devbridgeRunner.registrar({
+  nome: 'login',
+  etapas: [{ nome: 'Login', tempoLimiteMs: 120000, executar: function (ctx) {
+    var tela = ctx.escopoCom('entrar');
+    ctx.aplicar(tela, function () { tela.usuario = ctx.caso.usuario; tela.senha = ctx.caso.senha; tela.entrar(); });
+    return ctx.esperar(function () { return ctx.estadoAtual() === 'home'; }, 90000, 'a home');
+  } }],
+});
+```
+
+Uma rodada guarda `localStorage`, NativeStorage e os bancos, roda os casos um a um e devolve o aparelho ao estado de antes, inclusive se falhar ou for cancelada. O relatório vai para `.devbridge/test-runs/`. Formato completo, `ctx`, casos e `.gitignore` no [manual](docs/MANUAL.md#8-testes-automatizados-do-app).
 
 ## Limites
 

@@ -237,9 +237,9 @@
   /* ---- logs ---- */
   .logs { flex: none; display: flex; flex-direction: column; height: var(--logs-h, 240px); min-height: 0; background: var(--surface); border-top: 1px solid var(--line); position: relative; }
   .logs.collapsed { height: 42px !important; }
-  .logs.collapsed #logs, .logs.collapsed #net, .logs.collapsed #store, .logs.collapsed .prompt { display: none; }
-  .logs[data-tab="logs"] [data-for]:not([data-for="logs"]), .logs[data-tab="net"] [data-for]:not([data-for="net"]), .logs[data-tab="store"] [data-for]:not([data-for="store"]) { display: none !important; }
-  .logs[data-tab="store"] #followLabel, .logs[data-tab="store"] #clearLogs { display: none; }
+  .logs.collapsed #logs, .logs.collapsed #net, .logs.collapsed #store, .logs.collapsed #tests, .logs.collapsed .prompt { display: none; }
+  .logs[data-tab="logs"] [data-for]:not([data-for="logs"]), .logs[data-tab="net"] [data-for]:not([data-for="net"]), .logs[data-tab="store"] [data-for]:not([data-for="store"]), .logs[data-tab="tests"] [data-for]:not([data-for="tests"]) { display: none !important; }
+  .logs[data-tab="store"] #followLabel, .logs[data-tab="store"] #clearLogs, .logs[data-tab="tests"] #followLabel, .logs[data-tab="tests"] #clearLogs { display: none; }
   .resizer { position: absolute; left: 0; right: 0; top: -4px; height: 8px; cursor: ns-resize; z-index: 2; }
   .resizer::after { content: ""; position: absolute; left: 50%; top: 3px; width: 36px; height: 3px; margin-left: -18px; border-radius: 3px; background: var(--line-strong); opacity: 0; transition: opacity .15s; }
   .resizer:hover::after, .logs.resizing .resizer::after { opacity: 1; }
@@ -321,6 +321,46 @@
   #store .det { padding: 6px 14px 12px 24px; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }
   #store .det:hover .jt .copy { opacity: 1; }
   #store .det .note { color: var(--faint); font-family: var(--sans); font-style: italic; }
+  /* testes do app */
+  #tests { flex: 1; overflow: auto; padding: 8px 14px 14px; font: 12.5px/1.5 var(--sans); }
+  #tests .placeholder { padding: 2px 0; color: var(--faint); }
+  #tests .tpick { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px; color: var(--muted); margin-bottom: 10px; }
+  #tests .tpick label { display: inline-flex; align-items: center; gap: 5px; color: var(--text); cursor: pointer; }
+  #tests .thead { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; margin: 2px 0 8px; color: var(--muted); }
+  #tests .thead strong { color: var(--text); font-weight: 650; }
+  #tests .twrap { overflow-x: auto; }
+  #tests table { border-collapse: collapse; min-width: 100%; }
+  #tests th, #tests td { border: 1px solid var(--line); padding: 4px 8px; text-align: left; vertical-align: top; }
+  #tests th { font-weight: 600; color: var(--muted); background: var(--surface-2); white-space: nowrap; }
+  #tests td.case { white-space: nowrap; font-weight: 600; }
+  #tests td.cell { cursor: pointer; min-width: 120px; max-width: 280px; }
+  #tests td.cell:hover, #tests td.cell.open { background: var(--surface-2); }
+  #tests td.cell.cur { box-shadow: inset 0 0 0 2px var(--accent); }
+  #tests .sit { display: inline-block; font: 600 10px/17px var(--sans); padding: 0 6px; border-radius: 4px; background: var(--surface-3); color: var(--muted); text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
+  #tests .sit.ok { background: var(--ok-soft); color: var(--ok); }
+  #tests .sit.falha, #tests .sit.erro { background: var(--danger-soft); color: var(--danger); }
+  #tests .sit.rodando, #tests .sit.preparando, #tests .sit.salvando, #tests .sit.restaurando { background: var(--accent-soft); color: var(--accent); }
+  #tests .sit.cancelada { background: var(--warn-soft); color: var(--warn); }
+  #tests .d { color: var(--faint); margin-left: 6px; font-size: 11.5px; }
+  #tests .msg { display: block; color: var(--muted); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 260px; }
+  #tests .msg.err { color: var(--danger); }
+  #tests .tnotes { margin-top: 8px; display: grid; gap: 2px; }
+  #tests .tnotes .err { color: var(--danger); }
+  #tests .tnotes .warn { color: var(--warn); }
+  #tests .tdet { margin-top: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 8px 12px; font: 12px/1.55 var(--mono); }
+  #tests .tdet h4 { margin: 10px 0 4px; font: 600 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .04em; }
+  #tests .tdet .title { font: 650 13px var(--sans); }
+  #tests .tdet .line { white-space: pre-wrap; word-break: break-word; }
+  #tests .tdet .line.error, #tests .tdet .err { color: var(--danger); }
+  #tests .tdet .line.warn { color: var(--warn); }
+  #tests .tdet .rq { cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  #tests .tdet .rq:hover { background: var(--surface-2); }
+  #tests .tdet .rq.fail { color: var(--danger); }
+  #tests .tdet .det { padding: 4px 0 10px 16px; border-bottom: 1px solid var(--line); white-space: pre-wrap; word-break: break-word; }
+  #tests .tdet .det:hover .jt .copy { opacity: 1; }
+  #tests .tdet .meta, #tests .tdet .note { color: var(--muted); font-family: var(--sans); }
+  #tests .tdet .note { font-style: italic; color: var(--faint); }
+  #tests .tdet .hk { color: var(--j-key); }
   /* JavaScript no app: expressão e resultado entram na lista de logs */
   #logs .line.eval-in .msg { color: var(--muted); }
   #logs .line.eval-in .lv, #logs .line.eval-out .lv { background: transparent; color: var(--accent); font: 700 13px/18px var(--mono); }
@@ -423,6 +463,7 @@
           <button class="tab" data-tab="logs">Console do app <span class="count" id="logCount">0</span></button>
           <button class="tab" data-tab="net">Rede <span class="count" id="netCount">0</span></button>
           <button class="tab" data-tab="store">Storage <span class="count" id="storeCount">0</span></button>
+          <button class="tab" data-tab="tests">Testes <span class="count" id="testCount">0</span></button>
         </h2>
         <span class="spacer"></span>
         <select id="level" class="field" data-for="logs" title="Filtrar por nível"><option value="">Todos</option><option value="warn,error">Avisos e erros</option><option value="error">Só erros</option></select>
@@ -433,6 +474,9 @@
         <button class="btn ghost" id="storeRefresh" data-for="store" title="Ler de novo do app">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><path d="M21 4v5h-5"/></svg>Atualizar
         </button>
+        <select id="testSel" class="field" data-for="tests" title="Teste do app (.devbridge/tests)"></select>
+        <button class="btn" id="testRun" data-for="tests" title="Guarda o estado do aparelho, roda os casos marcados e restaura no fim">Rodar</button>
+        <button class="btn ghost" id="testCancel" data-for="tests" title="Para o caso atual, pula os seguintes e restaura o aparelho">Cancelar</button>
         <label class="switch" id="followLabel" title="Rolar automaticamente para o fim"><input type="checkbox" id="follow" checked><span class="track"></span><span class="hide-sm">Seguir</span></label>
         <button class="btn ghost" id="clearLogs" title="Limpar a lista (não apaga do servidor)">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M6 6l1 14h10l1-14"/></svg>Limpar
@@ -445,6 +489,7 @@
       </div>
       <div id="net" data-for="net"><div class="placeholder">Aguardando requisições do app…</div></div>
       <div id="store" data-for="store"><div class="placeholder">Escolha a área e clique em Atualizar.</div></div>
+      <div id="tests" data-for="tests"><div class="placeholder">Carregando testes…</div></div>
     </section>
   </div>
 </main>
@@ -1239,6 +1284,251 @@
   $('storeArea').onchange = loadStore;
   $('storeRefresh').onclick = loadStore;
 
+  // ---- testes ----
+  // Testes de .devbridge/tests: escolher casos, rodar e acompanhar a tabela
+  // caso × etapa (long-poll). Clicar numa célula mostra os logs e as
+  // requisições daquela etapa.
+  var tst = { list: null, run: null, watching: false, checked: {}, open: null, det: null, reqDets: {} };
+  var TEST_STEP_FIXED = { antes: 'antes', depois: 'depois' };
+
+  function tDur(ms) {
+    if (ms === null || ms === undefined) return '';
+    if (ms < 1000) return ms + ' ms';
+    var s = Math.round(ms / 1000);
+    return s < 60 ? s + ' s' : Math.floor(s / 60) + ' min ' + (s % 60) + ' s';
+  }
+  function tClock(v) { return v ? new Date(v).toTimeString().slice(0, 8) : '-'; }
+  function sit(s) { return el('span', 'sit ' + (s || 'aguardando'), s || 'aguardando'); }
+  function testBusy() { return !!(tst.run && !tst.run.fim); }
+
+  function selectedTest() {
+    var id = $('testSel').value;
+    return tst.list && tst.list.testes.filter(function (t) { return t.id === id; })[0];
+  }
+
+  function loadTests() {
+    return api('GET', '/tests').then(function (r) {
+      tst.list = r;
+      $('testCount').textContent = r.testes.length;
+      var sel = $('testSel');
+      var prev = sel.value || store('test');
+      sel.innerHTML = '';
+      r.testes.forEach(function (t) { sel.appendChild(el('option', null, t.id)); });
+      if (r.testes.some(function (t) { return t.id === prev; })) sel.value = prev;
+      if (r.rodada && (!tst.run || tst.run.id !== r.rodada.id)) tst.run = r.rodada;
+      renderTests();
+      if (testBusy()) watchTests();
+    }).catch(function (e) {
+      $('tests').innerHTML = '';
+      $('tests').appendChild(el('div', 'placeholder', e.message));
+    });
+  }
+
+  function watchTests() {
+    if (tst.watching || !tst.run) return;
+    tst.watching = true;
+    api('GET', '/tests/status?after=' + tst.run.rev).then(function (r) {
+      tst.watching = false;
+      tst.run = r;
+      renderTests();
+      if (tst.open) loadTestStep(tst.open.caso, tst.open.etapa, true);
+      if (r.fim) loadTests();
+      else watchTests();
+    }).catch(function () {
+      tst.watching = false;
+      setTimeout(watchTests, 2000);
+    });
+  }
+
+  function renderPick(box) {
+    var t = selectedTest();
+    var pick = el('div', 'tpick');
+    if (!t) {
+      pick.appendChild(el('span', null, tst.list && !tst.list.testes.length ? 'Nenhum teste em .devbridge/tests/ (arquivos <nome>.test.js; veja o manual).' : ''));
+      box.appendChild(pick);
+      return;
+    }
+    if (t.descricao) pick.appendChild(el('span', null, t.descricao));
+    if (t.etapas) pick.appendChild(el('span', null, t.etapas.length + ' etapa(s)'));
+    if (t.erro) pick.appendChild(el('span', 'err', t.erro));
+    if (t.erroCasos) {
+      pick.appendChild(el('span', 'err', t.erroCasos));
+    } else {
+      pick.appendChild(el('span', null, 'Casos' + (t.arquivoCasos ? ' (' + t.arquivoCasos.replace(/^.*\//, '') + ')' : '') + ':'));
+      var checked = tst.checked[t.id] || (tst.checked[t.id] = {});
+      t.casos.forEach(function (nome) {
+        var lab = el('label');
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = checked[nome] !== false;
+        cb.onchange = function () { checked[nome] = cb.checked; };
+        lab.appendChild(cb);
+        lab.appendChild(document.createTextNode(nome));
+        pick.appendChild(lab);
+      });
+    }
+    box.appendChild(pick);
+  }
+
+  function renderRun(box) {
+    var run = tst.run;
+    var head = el('div', 'thead');
+    head.appendChild(sit(run.situacao));
+    head.appendChild(el('strong', null, run.teste));
+    head.appendChild(el('span', null, 'rodada ' + run.id + ' · início ' + tClock(run.inicio) + (run.fim ? ' · ' + tDur(run.fim - run.inicio) : '')));
+    if (run.cancelando) head.appendChild(el('span', null, 'cancelando…'));
+    box.appendChild(head);
+    var wrap = el('div', 'twrap');
+    var table = document.createElement('table');
+    var trh = document.createElement('tr');
+    trh.appendChild(el('th', null, 'Caso'));
+    var steps = run.casos.length && run.casos[0].etapas.length ? run.casos[0].etapas : [];
+    steps.forEach(function (e, i) { trh.appendChild(el('th', null, (i + 1) + '. ' + e.nome)); });
+    table.appendChild(trh);
+    run.casos.forEach(function (c, ci) {
+      var tr = document.createElement('tr');
+      var name = el('td', 'case');
+      name.appendChild(el('div', null, c.nome));
+      var cs = el('div');
+      cs.appendChild(sit(c.situacao));
+      cs.appendChild(el('span', 'd', tDur(c.duracaoMs)));
+      name.appendChild(cs);
+      if (c.erro) {
+        var ce = el('span', 'msg err', c.erro);
+        ce.title = c.erro;
+        name.appendChild(ce);
+      }
+      tr.appendChild(name);
+      c.etapas.forEach(function (e, i) {
+        var td = el('td', 'cell' + (c.etapaAtual === i + 1 ? ' cur' : '') + (tst.open && tst.open.caso === ci + 1 && tst.open.etapa === String(i + 1) ? ' open' : ''));
+        td.appendChild(sit(e.situacao));
+        td.appendChild(el('span', 'd', tDur(e.duracaoMs)));
+        var text = e.erro || e.detalhe;
+        if (text) {
+          td.appendChild(el('span', 'msg' + (e.erro ? ' err' : ''), text));
+          td.title = text;
+        }
+        td.onclick = function () { loadTestStep(ci + 1, String(i + 1)); };
+        tr.appendChild(td);
+      });
+      table.appendChild(tr);
+    });
+    wrap.appendChild(table);
+    box.appendChild(wrap);
+    var notes = el('div', 'tnotes');
+    run.casos.forEach(function (c) {
+      (c.requisicoesComFalha || []).forEach(function (q) {
+        notes.appendChild(el('div', 'err', c.nome + ' · etapa ' + q.etapa + ' · requisição com falha #' + q.id + ' ' + q.metodo + ' ' + (q.status || q.erro || q.situacao) + ' ' + q.url));
+      });
+      (c.respostasComErro || []).forEach(function (q) {
+        notes.appendChild(el('div', 'err', q.erro ? c.nome + ' · ' + q.erro : c.nome + ' · etapa ' + q.etapa + ' · resposta com erro #' + q.id + ' ' + q.url + ': ' + (typeof q.achado === 'string' ? q.achado : JSON.stringify(q.achado))));
+      });
+      (c.errosNoLog || []).forEach(function (l) { notes.appendChild(el('div', 'warn', c.nome + ' · etapa ' + l.etapa + ' · log de erro: ' + l.msg)); });
+    });
+    if (run.erro) notes.appendChild(el('div', 'err', 'Erro da rodada: ' + run.erro));
+    var r = run.restauracao;
+    if (r) {
+      notes.appendChild(r.ok
+        ? el('div', null, 'Aparelho restaurado' + (r.bancosRemovidos && r.bancosRemovidos.length ? ' · bancos criados na rodada removidos: ' + r.bancosRemovidos.join(', ') : ''))
+        : el('div', 'err', 'Falha na restauração: ' + r.erros.join('; ') + '\n' + r.manual));
+    }
+    if (run.relatorio) notes.appendChild(el('div', null, 'Relatório: ' + run.relatorio));
+    if (notes.childNodes.length) box.appendChild(notes);
+    if (tst.det) box.appendChild(tst.det);
+  }
+
+  function renderTests() {
+    var box = $('tests');
+    box.innerHTML = '';
+    if (!tst.list) return;
+    if (!testBusy()) renderPick(box);
+    if (tst.run) renderRun(box);
+    else if (tst.list.testes.length) box.appendChild(el('div', 'placeholder', 'Rodar guarda localStorage, NativeStorage e os bancos, roda os casos marcados um a um e devolve o aparelho ao estado de antes. O app fecha e reabre.'));
+    $('testRun').disabled = testBusy() || !selectedTest();
+    $('testCancel').disabled = !testBusy() || !!tst.run.cancelando;
+  }
+
+  function reqDetail(id, row) {
+    if (tst.reqDets[id]) {
+      tst.reqDets[id].remove();
+      delete tst.reqDets[id];
+      return;
+    }
+    var det = el('div', 'det', 'Carregando…');
+    tst.reqDets[id] = det;
+    row.after(det);
+    api('GET', '/network/entry?id=' + id).then(function (e) {
+      det.innerHTML = '';
+      det.appendChild(el('div', 'meta', e.method + ' ' + e.url + '\n' + [e.via, e.state === 'pending' ? 'pendente' : e.status, e.ms === undefined ? '' : e.ms + ' ms'].join(' · ')));
+      if (e.error) det.appendChild(el('div', 'err', e.error));
+      det.appendChild(partNode('Pedido', e.request));
+      if (e.response) det.appendChild(partNode('Resposta', e.response));
+    }).catch(function (err) { det.textContent = err.message + ' (o inspetor guarda as 500 mais recentes; o relatório tem o resumo)'; });
+  }
+
+  // refresh: atualização ao vivo da etapa aberta, sem fechar o que estiver expandido.
+  function loadTestStep(caso, etapa, refresh) {
+    if (!refresh && tst.open && tst.open.caso === caso && tst.open.etapa === etapa) {
+      tst.open = null;
+      tst.det = null;
+      return renderTests();
+    }
+    if (refresh && Object.keys(tst.reqDets).length) return;
+    tst.open = { caso: caso, etapa: etapa };
+    api('GET', '/tests/status?case=' + caso + '&step=' + encodeURIComponent(TEST_STEP_FIXED[etapa] || etapa)).then(function (d) {
+      if (!tst.open || tst.open.caso !== caso || tst.open.etapa !== etapa) return;
+      var det = el('div', 'tdet');
+      det.appendChild(el('div', 'title', d.caso + ' · ' + d.etapaIndice + '. ' + d.etapa + ' · ' + d.situacao + (d.duracaoMs !== null ? ' · ' + tDur(d.duracaoMs) : '')));
+      if (d.erro) det.appendChild(el('div', 'line err', d.erro));
+      if (d.detalhe) det.appendChild(el('div', 'line', d.detalhe));
+      det.appendChild(el('h4', null, 'Logs (' + d.logs.length + ')'));
+      if (!d.logs.length) det.appendChild(el('div', 'note', 'nenhum'));
+      d.logs.forEach(function (l) { det.appendChild(el('div', 'line ' + l.nivel, tClock(l.ts) + ' ' + l.nivel.toUpperCase() + ' ' + l.msg)); });
+      det.appendChild(el('h4', null, 'Requisições (' + d.requisicoes.length + ')'));
+      if (!d.requisicoes.length) det.appendChild(el('div', 'note', 'nenhuma'));
+      tst.reqDets = {};
+      d.requisicoes.forEach(function (q) {
+        var fail = q.situacao === 'error' || (q.situacao === 'done' && (q.status >= 400 || q.status <= 0));
+        var row = el('div', 'rq' + (fail ? ' fail' : ''), '#' + q.id + ' ' + q.metodo + ' ' + (q.situacao === 'pending' ? '…' : q.status) + (q.ms !== undefined && q.ms !== null ? ' ' + q.ms + ' ms' : '') + ' ' + q.url);
+        row.title = q.url + (q.erro ? '\n' + q.erro : '');
+        row.onclick = function () { reqDetail(q.id, row); };
+        det.appendChild(row);
+      });
+      det.appendChild(el('div', 'note', 'Pelo MCP: tests_status com case ' + caso + ' e step ' + etapa + '; corpo com app_network_entry.'));
+      tst.det = det;
+      renderTests();
+    }).catch(function (e) {
+      tst.det = el('div', 'tdet err', e.message);
+      renderTests();
+    });
+  }
+
+  $('testSel').onchange = function () { store('test', $('testSel').value); renderTests(); };
+  $('testRun').onclick = function () {
+    var t = selectedTest();
+    if (!t) return;
+    var checked = tst.checked[t.id] || {};
+    var cases = (t.casos || []).filter(function (n) { return checked[n] !== false; });
+    if (!cases.length) return info('Marque ao menos um caso.', 'err');
+    $('testRun').disabled = true;
+    tst.open = null;
+    tst.det = null;
+    api('POST', '/tests/run', { test: t.id, cases: cases }).then(function (r) {
+      tst.run = r;
+      renderTests();
+      watchTests();
+    }).catch(function (e) {
+      info(e.message, 'err');
+      renderTests();
+    });
+  };
+  $('testCancel').onclick = function () {
+    api('POST', '/tests/cancel').then(function (r) {
+      tst.run = r;
+      renderTests();
+    }).catch(function (e) { info(e.message, 'err'); });
+  };
+
   // Painel de logs: altura arrastável e recolhível, lembradas entre visitas.
   var panel = $('logsPanel');
   function setLogsHeight(h) {
@@ -1254,8 +1544,9 @@
     store('bottomTab', tab);
     // Storage não é acompanhado ao vivo: lê ao abrir a aba e no Atualizar.
     if (tab === 'store') loadStore();
+    if (tab === 'tests') loadTests();
   }
-  setTab(['net', 'store'].indexOf(store('bottomTab')) >= 0 ? store('bottomTab') : 'logs');
+  setTab(['net', 'store', 'tests'].indexOf(store('bottomTab')) >= 0 ? store('bottomTab') : 'logs');
   Array.prototype.forEach.call(document.querySelectorAll('.tab'), function (b) {
     b.onclick = function () {
       setTab(b.dataset.tab);
@@ -1362,6 +1653,7 @@
   loadStatus();
   pollLogs();
   pollNet();
+  if (panel.dataset.tab !== 'tests') loadTests();
   setInterval(loadStatus, 3000);
   setInterval(pollLogs, 1000);
   setInterval(pollNet, 1000);

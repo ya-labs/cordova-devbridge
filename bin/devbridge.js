@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const { splitSql } = require('../src/sqlguard');
 const { createSnapshot, restoreSnapshot, listSnapshots } = require('../src/snapshot');
@@ -52,18 +52,30 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   db-snapshot <NOME> [--db X] salva os bancos do app em .devbridge/snapshots/<NOME>
   db-restore <NOME>          deixa os bancos iguais ao snapshot, apagando os criados depois (fecha e reabre o app)
   db-snapshots               lista os snapshots
+  test list                  testes do app em .devbridge/tests (etapas e casos)
+  test run <TESTE> [--case NOME]…
+                             roda o teste no app, um caso por vez, e restaura o aparelho
+                             no fim (Ctrl+C cancela e restaura)
+  test status [ID] [--case N --step N] [--json]
+                             tabela caso × etapa; com --case/--step, logs e requisições da etapa
+  test cancel                cancela a rodada em andamento
   screenshot [--out arq.png] captura a tela do celular
   mcp                        servidor MCP (stdio) para agentes de IA
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set', '--ms']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set', '--ms', '--case', '--step']);
+const REPEATED_FLAGS = new Set(['case']);
 
 function parseArgs(argv) {
   const args = { _: [], flags: {} };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (VALUE_FLAGS.has(a)) args.flags[a.slice(2)] = argv[++i];
+    if (VALUE_FLAGS.has(a)) {
+      const k = a.slice(2);
+      const v = argv[++i];
+      args.flags[k] = REPEATED_FLAGS.has(k) && args.flags[k] !== undefined ? [].concat(args.flags[k], v) : v;
+    }
     else if (a === '-f') args.flags.follow = true;
     else if (a.startsWith('--')) args.flags[a.slice(2)] = true;
     else args._.push(a);
@@ -178,6 +190,74 @@ async function cmdSql(api, args) {
   console.log(args.flags.json ? JSON.stringify(r, null, 2) : sqlResult(r));
 }
 
+// Acompanha a rodada pelo long-poll: uma linha por mudança de etapa, a tabela no fim.
+async function followRun(api, run) {
+  const seen = new Map();
+  let cancelled = false;
+  const onInt = () => {
+    if (cancelled) process.exit(130);
+    cancelled = true;
+    console.log('\nCancelando: o caso atual para na próxima espera e o aparelho é restaurado (Ctrl+C de novo sai sem esperar).');
+    api.testCancel().catch((err) => console.log(`(cancelamento: ${err.message})`));
+  };
+  process.on('SIGINT', onInt);
+  let phase = '';
+  for (;;) {
+    if (run.situacao !== phase) {
+      phase = run.situacao;
+      if (!['rodando', 'ok', 'falha', 'erro', 'cancelada'].includes(phase)) console.log(`[${phase}]`);
+    }
+    run.casos.forEach((c, ci) => {
+      const key = `${ci}`;
+      if (c.situacao !== 'aguardando' && !seen.has(key)) {
+        seen.set(key, true);
+        console.log(`\n${ci + 1}. ${c.nome}`);
+      }
+      c.etapas.forEach((e, i) => {
+        if (e.situacao === 'aguardando') return;
+        const line = `${e.situacao}|${e.detalhe || ''}|${e.erro || ''}`;
+        if (seen.get(`${ci}/${i}`) === line) return;
+        seen.set(`${ci}/${i}`, line);
+        const extra = e.erro ? ` — ${e.erro}` : e.detalhe ? ` — ${e.detalhe}` : '';
+        console.log(`   ${e.nome}: ${e.situacao}${extra}`);
+      });
+    });
+    if (run.fim) break;
+    run = await api.testStatus({ after: run.rev });
+  }
+  process.off('SIGINT', onInt);
+  console.log(`\n${testsStatus(run)}`);
+  return run;
+}
+
+async function cmdTest(api, args) {
+  const sub = args._[1];
+  const { flags } = args;
+  switch (sub) {
+    case 'list':
+    case undefined:
+      return console.log(testsList(await api.tests()));
+    case 'run': {
+      if (!args._[2]) throw new Error('Informe o teste: devbridge test run <nome> (veja devbridge test list).');
+      const run = await api.testRun({ test: args._[2], cases: flags.case === undefined ? undefined : [].concat(flags.case) });
+      console.log(`Rodada ${run.id}: ${run.teste}, ${run.casos.length} caso(s).`);
+      const end = await followRun(api, run);
+      process.exitCode = end.situacao === 'ok' && end.restauracao && end.restauracao.ok ? 0 : 1;
+      return;
+    }
+    case 'status': {
+      if (flags.step !== undefined && flags.case === undefined) throw new Error('--step exige --case.');
+      const r = await api.testStatus({ id: args._[2], case: flags.case, step: flags.step });
+      if (flags.json) return console.log(JSON.stringify(r, null, 2));
+      return console.log(r.etapaIndice !== undefined ? testStep(r) : testsStatus(r));
+    }
+    case 'cancel':
+      return console.log(`Cancelando a rodada ${(await api.testCancel()).id}; acompanhe com devbridge test status.`);
+    default:
+      throw new Error(`Subcomando desconhecido: test ${sub}. Use list, run, status ou cancel.`);
+  }
+}
+
 async function cmdPullDb(config, flags) {
   const spec = resolveDatabase(config, flags.db);
   if (!spec.name) throw new Error(`Banco "${spec.alias}" não tem "name" na config; informe --db <arquivo.db>.`);
@@ -290,6 +370,8 @@ async function main() {
       fs.writeFileSync(out, png);
       return console.log(out);
     }
+    case 'test':
+      return cmdTest(api, args);
     case 'mcp':
       startMcp(config);
       return;

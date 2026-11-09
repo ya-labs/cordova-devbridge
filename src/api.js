@@ -41,6 +41,10 @@ class Api {
   tables(db) { return this.call('GET', '/tables', { query: { db } }); }
   schema(db, table) { return this.call('GET', '/schema', { query: { db, table } }); }
   screenshot() { return this.call('GET', '/screenshot', { raw: true }); }
+  tests() { return this.call('GET', '/tests'); }
+  testRun(body) { return this.call('POST', '/tests/run', { body }); }
+  testCancel() { return this.call('POST', '/tests/cancel'); }
+  testStatus(opts = {}) { return this.call('GET', '/tests/status', { query: { id: opts.id, case: opts.case, step: opts.step, after: opts.after, wait: opts.waitMs } }); }
 }
 
 module.exports = { Api };

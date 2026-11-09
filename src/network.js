@@ -2,6 +2,13 @@
 
 const MAX_ENTRIES = 500;
 
+// Marca "rodada/caso/etapa" das rodadas de teste; consulta terminada em "/" pega o caso inteiro.
+function matchTag(tag, query) {
+  if (!query) return true;
+  if (!tag) return false;
+  return query.endsWith('/') ? tag.startsWith(query) : tag === query;
+}
+
 // Cabeçalhos e campos que carregam credencial: o valor vira "***", a chave fica.
 const SECRET_HEADERS = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$/i;
 const SECRET_KEY = '(?:senha|password|passwd|pwd|secret|token|api[_-]?key)';
@@ -69,6 +76,7 @@ class NetworkLog {
           request: part(ev.request || {}, this.mask),
           response: null,
         };
+        if (ev.test) entry.test = String(ev.test);
         this.entries.set(key, entry);
         this.byId.set(entry.id, entry);
       } else if (ev.phase === 'end') {
@@ -92,15 +100,21 @@ class NetworkLog {
 
   // local: requisições ao próprio servidor de desenvolvimento (templates, js),
   // escondidas por padrão; as que falham aparecem sempre.
-  list({ since = 0, url = null, failed = false, local = false, limit = 100 } = {}) {
+  list({ since = 0, url = null, failed = false, local = false, limit = 100, test = null } = {}) {
     const needle = url ? String(url).toLowerCase() : null;
     const items = [...this.entries.values()]
       .filter((e) => e.seq > since)
+      .filter((e) => matchTag(e.test, test))
       .filter((e) => local || !e.local || isFailure(e))
       .filter((e) => !failed || isFailure(e))
       .filter((e) => !needle || e.url.toLowerCase().includes(needle))
       .sort((a, b) => a.seq - b.seq);
     return { last: this.seq, entries: items.slice(-limit).map(summary) };
+  }
+
+  // Entradas completas (com corpos) de uma etapa ou caso de teste, na ordem em que começaram.
+  entriesFor(test) {
+    return [...this.entries.values()].filter((e) => matchTag(e.test, test)).sort((a, b) => a.id - b.id);
   }
 
   get(id) {
@@ -116,7 +130,8 @@ function summary(e) {
     state: e.state, status: e.status, ms: e.ms, reqSize: e.request.size, resSize: e.response ? e.response.size : null,
   };
   if (e.error) out.error = e.error;
+  if (e.test) out.test = e.test;
   return out;
 }
 
-module.exports = { NetworkLog, maskText, maskHeaders, isFailure };
+module.exports = { NetworkLog, maskText, maskHeaders, isFailure, matchTag };
