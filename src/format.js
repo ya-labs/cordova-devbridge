@@ -200,9 +200,11 @@ function testsList(r) {
     else if (!t.erro) lines.push('  etapas: abra o app para listar');
     if (t.erroCasos) lines.push(`  casos: ${t.erroCasos}`);
     else lines.push(`  casos${t.arquivoCasos ? ` (${t.arquivoCasos})` : ' (sem arquivo: um caso vazio)'}: ${t.casos.join(', ')}`);
+    if (t.requer && t.requer.length) lines.push(`  requer antes, na mesma rodada: ${t.requer.join(', ')}`);
     if (t.analisaRespostas) lines.push('  analisa respostas do servidor nos casos com falha');
     return lines.join('\n');
   });
+  if (r.comum && r.comum.length) blocks.push(`Código comum (carregado antes dos testes): ${r.comum.join(', ')}`);
   if (!r.app) blocks.push('(app não conectado: etapas lidas da última vez que o app carregou o teste)');
   if (r.rodada) blocks.push(`Rodada ${r.rodada.id}: ${r.rodada.teste} · ${r.rodada.situacao}`);
   if (r.historico && r.historico.length) blocks.push(`Últimas rodadas (tests_status com id; CLI: test runs):\n${r.historico.map(runLine).join('\n')}`);
@@ -223,7 +225,7 @@ function runLine(r) {
     f.logs ? `${f.logs} log(s) de erro` : '',
     r.restaurado === false ? 'RESTAURAÇÃO FALHOU' : '',
   ].filter(Boolean).join(' · ');
-  return `${r.id}  ${dayClock(r.inicio)}  ${String(r.teste || '-').padEnd(20)} ${String(r.situacao).toUpperCase().padEnd(9)} ${`${ok}/${r.casos.length} ok`.padEnd(8)} ${duration(r.duracaoMs).padEnd(10)} ${notes}`.trimEnd();
+  return `${r.id}  ${dayClock(r.inicio)}  ${String(r.testes ? r.testes.join(' → ') : r.teste || '-').padEnd(20)} ${String(r.situacao).toUpperCase().padEnd(9)} ${`${ok}/${r.casos.length} ok`.padEnd(8)} ${duration(r.duracaoMs).padEnd(10)} ${notes}`.trimEnd();
 }
 
 function testRuns(r) {
@@ -231,25 +233,37 @@ function testRuns(r) {
   return `${r.rodadas.map(runLine).join('\n')}\n\nDetalhe: test status <ID> (MCP: tests_status com id).`;
 }
 
-function stepLine(e, i, current) {
+function stepLine(e, i, current, indent = '   ') {
   const mark = current === i + 1 ? '▶' : ' ';
   const info = e.erro ? `Erro: ${oneLine(e.erro)}` : e.detalhe ? oneLine(e.detalhe) : '';
-  return `   ${mark}${String(i + 1).padStart(2)}. ${e.nome.padEnd(24)} ${e.situacao.padEnd(10)} ${duration(e.duracaoMs).padEnd(12)} ${info}`.trimEnd();
+  return `${indent}${mark}${String(i + 1).padStart(2)}. ${e.nome.padEnd(24)} ${e.situacao.padEnd(10)} ${duration(e.duracaoMs).padEnd(12)} ${info}`.trimEnd();
+}
+
+// Etapa de um aviso (log, requisição): com o teste quando a rodada tem mais de um.
+function where(x, many) {
+  return many && x.teste ? `${x.teste}, etapa ${x.etapa}` : `etapa ${x.etapa}`;
 }
 
 function testsStatus(run) {
-  const head = [`Rodada ${run.id} · ${run.teste} · ${run.situacao.toUpperCase()}${run.cancelando ? ' (cancelando…)' : ''}`];
+  const testes = run.testes || [run.teste];
+  const many = testes.length > 1;
+  const head = [`Rodada ${run.id} · ${testes.join(' → ')} · ${run.situacao.toUpperCase()}${run.cancelando ? ' (cancelando…)' : ''}`];
   head.push(`início ${clock(run.inicio)}${run.fim ? ` · fim ${clock(run.fim)} · ${duration(run.duracaoMs !== undefined ? run.duracaoMs : run.fim - run.inicio)}` : ''}`);
   if (run.erro) head.push(`Erro da rodada: ${run.erro}`);
   const out = [head.join('\n')];
   run.casos.forEach((c, ci) => {
     const lines = [`${ci + 1}. ${c.nome} — ${c.situacao.toUpperCase()}${c.duracaoMs !== null && c.duracaoMs !== undefined ? ` (${duration(c.duracaoMs)})` : ''}${c.telaAtual && c.situacao === 'rodando' ? ` · tela ${c.telaAtual}` : ''}`];
-    c.etapas.forEach((e, i) => lines.push(stepLine(e, i, c.etapaAtual)));
+    c.testes.forEach((t, ti) => {
+      const current = c.testeAtual === ti + 1 ? c.etapaAtual : null;
+      if (!many) return t.etapas.forEach((e, i) => lines.push(stepLine(e, i, current)));
+      lines.push(`   ${ti + 1}) ${t.teste} — ${t.situacao}${t.duracaoMs !== null && t.duracaoMs !== undefined ? ` (${duration(t.duracaoMs)})` : ''}`);
+      t.etapas.forEach((e, i) => lines.push(stepLine(e, i, current, '      ')));
+    });
     if (c.erro) lines.push(`   erro: ${oneLine(c.erro, 500)}`);
-    for (const l of c.errosNoLog || []) lines.push(`   log de erro [etapa ${l.etapa}]: ${oneLine(l.msg)}`);
-    for (const q of c.requisicoesComFalha || []) lines.push(`   requisição com falha: #${q.id} ${q.metodo} ${q.status || q.erro || q.situacao} ${q.url} [etapa ${q.etapa}]`);
+    for (const l of c.errosNoLog || []) lines.push(`   log de erro [${where(l, many)}]: ${oneLine(l.msg)}`);
+    for (const q of c.requisicoesComFalha || []) lines.push(`   requisição com falha: #${q.id} ${q.metodo} ${q.status || q.erro || q.situacao} ${q.url} [${where(q, many)}]`);
     for (const q of c.respostasComErro || []) {
-      lines.push(q.erro ? `   ${q.erro}` : `   resposta com erro: #${q.id} ${q.metodo} ${q.status} ${q.url} [etapa ${q.etapa}]: ${oneLine(q.achado, 500)}`);
+      lines.push(q.erro ? `   ${q.erro}` : `   resposta com erro: #${q.id} ${q.metodo} ${q.status} ${q.url} [${where(q, many)}]: ${oneLine(q.achado, 500)}`);
     }
     if (c.dados && Object.keys(c.dados).length) lines.push(`   dados: ${oneLine(c.dados, 500)}`);
     out.push(lines.join('\n'));
@@ -262,13 +276,16 @@ function testsStatus(run) {
     out.push('Restaurando o aparelho…');
   }
   if (run.relatorio) out.push(`Relatório: ${run.relatorio}`);
-  if (run.doRelatorio) out.push(`Logs e requisições de uma etapa: tests_status com id ${run.id}, case e step (CLI: test status ${run.id} --case 1 --step 2).`);
-  else out.push('Logs e requisições de uma etapa: tests_status com case e step (CLI: test status --case 1 --step 2); corpo da requisição com app_network_entry (CLI: network <id>).');
+  const test = many ? ', test' : '';
+  const testFlag = many ? ' --test 1' : '';
+  if (run.doRelatorio) out.push(`Logs e requisições de uma etapa: tests_status com id ${run.id}, case${test} e step (CLI: test status ${run.id} --case 1${testFlag} --step 2).`);
+  else out.push(`Logs e requisições de uma etapa: tests_status com case${test} e step (CLI: test status --case 1${testFlag} --step 2); corpo da requisição com app_network_entry (CLI: network <id>).`);
   return out.join('\n\n');
 }
 
 function testStep(d) {
-  const head = [`Caso ${d.casoIndice} (${d.caso}) · etapa ${d.etapaIndice} (${d.etapa}): ${d.situacao}${d.duracaoMs !== null && d.duracaoMs !== undefined ? ` · ${duration(d.duracaoMs)}` : ''}`];
+  const test = d.testes > 1 ? ` · teste ${d.testeIndice} (${d.teste})` : '';
+  const head = [`Caso ${d.casoIndice} (${d.caso})${test} · etapa ${d.etapaIndice} (${d.etapa}): ${d.situacao}${d.duracaoMs !== null && d.duracaoMs !== undefined ? ` · ${duration(d.duracaoMs)}` : ''}`];
   if (d.erro) head.push(`Erro: ${d.erro}`);
   if (d.detalhe) head.push(`Detalhe: ${d.detalhe}`);
   if (d.aviso) head.push(d.aviso);

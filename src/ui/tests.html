@@ -177,6 +177,8 @@
   table.matrix { border-collapse: separate; border-spacing: 0; width: 100%; font-size: 13px; }
   .matrix th { text-align: left; font-size: 11.5px; font-weight: 600; color: var(--muted); padding: 9px 10px; border-bottom: 1px solid var(--line); white-space: nowrap; background: var(--surface-2); }
   .matrix th:first-child { border-top-left-radius: var(--radius); }
+  .matrix th.group { text-align: left; color: var(--text); font-size: 12px; border-bottom: 1px solid var(--line); }
+  .matrix th.sep, .matrix td.sep { box-shadow: inset 1px 0 0 var(--line-strong); }
   .matrix th:last-child { border-top-right-radius: var(--radius); }
   .matrix td { padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   .matrix tr:last-child td { border-bottom: 0; }
@@ -220,6 +222,13 @@
   .step-side { text-align: right; font-size: 12px; color: var(--muted); white-space: nowrap; font-variant-numeric: tabular-nums; }
   .step-side .cnt { display: block; color: var(--faint); margin-top: 2px; }
   .step-det { padding: 2px 14px 14px 46px; }
+  .test-h { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; padding: 12px 14px 8px; border-top: 1px solid var(--line); background: var(--surface-2); }
+  .test-h:first-child { border-top: 0; }
+  .test-h strong { font-size: 13.5px; }
+  .test-h .step-txt { flex-basis: 100%; margin: 0; }
+  .test-n { width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center; font: 650 11px var(--sans); background: var(--accent-soft); color: var(--accent); }
+  .step.in-test .step-row { padding-left: 26px; }
+  .step.in-test .step-det { padding-left: 58px; }
   .sub-h { margin: 10px 0 6px; font: 650 11px var(--sans); color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
   .dados { padding: 10px 14px 14px; border-top: 1px solid var(--line); font: 12px/1.55 var(--mono); }
 
@@ -294,6 +303,20 @@
   .case-checks label { display: inline-flex; align-items: center; gap: 7px; padding: 6px 11px; border: 1px solid var(--line); border-radius: 8px; cursor: pointer; font-size: 13px; }
   .case-checks label:hover { border-color: var(--line-strong); }
   .case-checks input { accent-color: var(--accent); }
+  .test-picks { display: flex; flex-wrap: wrap; gap: 8px; }
+  .test-picks + .help { margin-top: 10px; }
+  .test-pick { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px 0 6px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); cursor: pointer; font-size: 13px; }
+  .test-pick:hover { border-color: var(--line-strong); }
+  .test-pick small { color: var(--faint); font-size: 11.5px; }
+  .test-pick .pick-n { width: 22px; height: 22px; border-radius: 6px; display: grid; place-items: center; font: 650 11.5px var(--sans); background: var(--surface-3); color: var(--muted); }
+  .test-pick.on { border-color: var(--accent); background: var(--accent-soft); }
+  .test-pick.on .pick-n { background: var(--accent); color: var(--accent-text); }
+  .order-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .order-list li { display: flex; align-items: flex-start; gap: 10px; border: 1px solid var(--line); border-radius: 9px; padding: 10px 12px; }
+  .order-list .grow { flex: 1; min-width: 0; display: grid; gap: 6px; }
+  .order-list .order-t { font-weight: 600; font-size: 13.5px; }
+  .order-tools { display: flex; gap: 4px; }
+  .order-warn { margin: 10px 0 0; display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
   .help { color: var(--muted); font-size: 12.5px; margin: 0; }
   .card + .help { margin-top: 12px; }
   .err-txt { color: var(--danger); font-size: 13px; white-space: pre-wrap; }
@@ -381,7 +404,7 @@
     sel: null, tab: 'resumo', run: null, loading: false, loadError: null,
     caseIdx: 0, open: {}, reqOpen: {}, reqCache: {},
     logF: { caso: '', nivel: '', q: '' }, reqF: { caso: '', falhas: false, q: '' },
-    tests: null, testsError: null, checked: {}, newTest: null, status: null
+    tests: null, testsError: null, checked: {}, order: [], status: null
   };
 
   // ---- utilitários ----
@@ -452,52 +475,63 @@
     return a ? b - a : null;
   }
   function isLive(run) { return !!(run && S.live && run.id === S.live.id && !S.live.fim); }
-  function stepKeys(c) {
+  // Etapas de um teste: "antes", 0…n-1 e "depois".
+  function stepKeys(t) {
     var ks = ['antes'];
-    c.etapas.forEach(function (e, i) { ks.push(i); });
+    t.etapas.forEach(function (e, i) { ks.push(i); });
     ks.push('depois');
     return ks;
   }
-  function stepLabel(c, k) {
+  function stepLabel(t, k) {
     if (k === 'antes' || k === 'depois') return k;
-    return (k + 1) + '. ' + (c && c.etapas[k] ? c.etapas[k].nome : '?');
+    return (k + 1) + '. ' + (t && t.etapas[k] ? t.etapas[k].nome : '?');
   }
-  function whereText(run, ci, k) {
+  function testsOf(run) { return run.testes || [run.teste]; }
+  function many(run) { return testsOf(run).length > 1; }
+  function runLabel(r) { return (r.testes || [r.teste]).join(' → '); }
+  function whereTest(run, ci, ti) {
     var c = run.casos[ci];
-    return (c ? c.nome : 'caso ' + (ci + 1)) + ' · ' + stepLabel(c, k);
+    var t = c && c.testes[ti];
+    return (c ? c.nome : 'caso ' + (ci + 1)) + (many(run) && t ? ' · ' + t.teste : '');
+  }
+  function whereText(run, ci, ti, k) {
+    var c = run.casos[ci];
+    return whereTest(run, ci, ti) + ' · ' + stepLabel(c && c.testes[ti], k);
   }
   function reqFailed(q) { return q.situacao === 'error' || (q.situacao === 'done' && (q.status >= 400 || q.status <= 0)); }
 
-  // Logs e requisições da rodada, já com caso (ci) e etapa (k: número da etapa
-  // a partir de 0, "antes" ou "depois"). Relatório: gravados por etapa. Ao vivo:
-  // buffers do servidor filtrados pela marca rodada/caso/etapa.
+  // Logs e requisições da rodada, com caso (ci), teste (ti) e etapa (k: número da
+  // etapa a partir de 0, "antes" ou "depois"). Relatório: gravados por etapa. Ao
+  // vivo: buffers do servidor filtrados pela marca rodada/caso/teste/etapa.
   function collect(run) {
     var logs = [], reqs = [], stored = false;
     if (isLive(run)) {
       var d = S.liveData && S.liveData.id === run.id ? S.liveData : { logs: [], reqs: [] };
       var parse = function (tag) {
         var p = String(tag || '').split('/');
-        return { ci: Number(p[1]), k: /^\d+$/.test(p[2]) ? Number(p[2]) : p[2] };
+        return { ci: Number(p[1]), ti: Number(p[2]), k: /^\d+$/.test(p[3]) ? Number(p[3]) : p[3] };
       };
       d.logs.forEach(function (e) {
         var w = parse(e.test);
-        logs.push({ ci: w.ci, k: w.k, seq: e.seq, ts: e.ts, nivel: e.level, msg: e.msg });
+        logs.push({ ci: w.ci, ti: w.ti, k: w.k, seq: e.seq, ts: e.ts, nivel: e.level, msg: e.msg });
       });
       d.reqs.forEach(function (e) {
         var w = parse(e.test);
-        var q = { ci: w.ci, k: w.k, id: e.id, metodo: e.method, url: e.url, situacao: e.state, status: e.status, ms: e.ms };
+        var q = { ci: w.ci, ti: w.ti, k: w.k, id: e.id, metodo: e.method, url: e.url, situacao: e.state, status: e.status, ms: e.ms };
         if (e.error) q.erro = e.error;
         reqs.push(q);
       });
       stored = true;
     } else {
       run.casos.forEach(function (c, ci) {
-        stepKeys(c).forEach(function (k) {
-          var src = typeof k === 'number' ? c.etapas[k] : c[k];
-          if (!src || !Array.isArray(src.logs)) return;
-          stored = true;
-          src.logs.forEach(function (l) { logs.push({ ci: ci, k: k, seq: l.seq, ts: l.ts, nivel: l.nivel, msg: l.msg }); });
-          (src.requisicoes || []).forEach(function (q) { reqs.push(Object.assign({ ci: ci, k: k }, q)); });
+        c.testes.forEach(function (t, ti) {
+          stepKeys(t).forEach(function (k) {
+            var src = typeof k === 'number' ? t.etapas[k] : t[k];
+            if (!src || !Array.isArray(src.logs)) return;
+            stored = true;
+            src.logs.forEach(function (l) { logs.push({ ci: ci, ti: ti, k: k, seq: l.seq, ts: l.ts, nivel: l.nivel, msg: l.msg }); });
+            (src.requisicoes || []).forEach(function (q) { reqs.push(Object.assign({ ci: ci, ti: ti, k: k }, q)); });
+          });
         });
       });
     }
@@ -513,21 +547,24 @@
     var r = run.restauracao;
     if (r && !r.ok) out.push({ sev: 'bad', what: 'Restauração do aparelho', txt: (r.erros || []).join('\n') + (r.manual ? '\n' + r.manual : '') });
     run.casos.forEach(function (c, ci) {
-      if (c.erro && !c.etapas.some(function (e) { return e.erro === c.erro; })) out.push({ sev: 'bad', ci: ci, what: c.nome, txt: c.erro });
-      c.etapas.forEach(function (e, k) {
-        if (e.erro) out.push({ sev: kind(e.situacao) === 'warn' ? 'warn' : 'bad', ci: ci, k: k, what: whereText(run, ci, k), txt: e.erro });
+      var names = c.testes.map(function (t) { return t.teste; });
+      var tiOf = function (x) { var i = names.indexOf(x.teste); return i < 0 ? 0 : i; };
+      var kOf = function (x) { return typeof x.etapa === 'number' ? x.etapa - 1 : x.etapa; };
+      c.testes.forEach(function (t, ti) {
+        if (t.erro && !t.etapas.some(function (e) { return e.erro === t.erro; })) out.push({ sev: 'bad', ci: ci, ti: ti, what: whereTest(run, ci, ti), txt: t.erro });
+        t.etapas.forEach(function (e, k) {
+          if (e.erro) out.push({ sev: kind(e.situacao) === 'warn' ? 'warn' : 'bad', ci: ci, ti: ti, k: k, what: whereText(run, ci, ti, k), txt: e.erro });
+        });
       });
       (c.respostasComErro || []).forEach(function (q) {
         if (q.erro) return out.push({ sev: 'warn', ci: ci, what: c.nome + ' · análise das respostas', txt: q.erro });
-        out.push({ sev: 'bad', ci: ci, k: typeof q.etapa === 'number' ? q.etapa - 1 : q.etapa, what: whereText(run, ci, typeof q.etapa === 'number' ? q.etapa - 1 : q.etapa) + ' · resposta com erro', txt: '#' + q.id + ' ' + (q.metodo || '') + ' ' + (q.status || '') + ' ' + (q.url || ''), achado: q.achado });
+        out.push({ sev: 'bad', ci: ci, ti: tiOf(q), k: kOf(q), what: whereText(run, ci, tiOf(q), kOf(q)) + ' · resposta com erro', txt: '#' + q.id + ' ' + (q.metodo || '') + ' ' + (q.status || '') + ' ' + (q.url || ''), achado: q.achado });
       });
       (c.requisicoesComFalha || []).forEach(function (q) {
-        var k = typeof q.etapa === 'number' ? q.etapa - 1 : q.etapa;
-        out.push({ sev: 'bad', ci: ci, k: k, what: whereText(run, ci, k) + ' · requisição com falha', txt: '#' + q.id + ' ' + q.metodo + ' ' + (q.status || q.erro || q.situacao) + ' ' + q.url, mono: true });
+        out.push({ sev: 'bad', ci: ci, ti: tiOf(q), k: kOf(q), what: whereText(run, ci, tiOf(q), kOf(q)) + ' · requisição com falha', txt: '#' + q.id + ' ' + q.metodo + ' ' + (q.status || q.erro || q.situacao) + ' ' + q.url, mono: true });
       });
       (c.errosNoLog || []).forEach(function (l) {
-        var k = typeof l.etapa === 'number' ? l.etapa - 1 : l.etapa;
-        out.push({ sev: 'warn', ci: ci, k: k, what: whereText(run, ci, k) + ' · log de erro', txt: l.msg, mono: true });
+        out.push({ sev: 'warn', ci: ci, ti: tiOf(l), k: kOf(l), what: whereText(run, ci, tiOf(l), kOf(l)) + ' · log de erro', txt: l.msg, mono: true });
       });
     });
     return out;
@@ -610,7 +647,7 @@
     var b = el('button', 'run-item' + (S.sel === r.id ? ' sel' : ''));
     var top = el('div', 'ri-top');
     top.appendChild(el('span', 'sdot ' + kind(r.situacao)));
-    top.appendChild(el('strong', null, r.teste || r.id));
+    top.appendChild(el('strong', null, r.teste ? runLabel(r) : r.id));
     top.appendChild(el('span', 'ri-time', hm(r.inicio)));
     b.appendChild(top);
     if (r.casos && r.casos.length) b.appendChild(segs(r.casos));
@@ -634,8 +671,9 @@
     var scroll = box.scrollTop;
     box.innerHTML = '';
     var f = $('filter').value;
-    var list = S.runs.filter(function (r) { return !f || r.teste === f; });
-    var live = S.live && !S.live.fim && (!f || S.live.teste === f) ? S.live : null;
+    var has = function (r) { return !f || (r.testes || [r.teste]).indexOf(f) >= 0; };
+    var list = S.runs.filter(has);
+    var live = S.live && !S.live.fim && has(S.live) ? S.live : null;
     if (live) {
       box.appendChild(el('div', 'day', 'Em andamento'));
       box.appendChild(runItem(live));
@@ -664,7 +702,7 @@
     var sel = $('filter');
     var cur = sel.value || store('testsFilter') || '';
     var names = S.testes.slice();
-    if (S.live && names.indexOf(S.live.teste) < 0) names.push(S.live.teste);
+    if (S.live) testsOf(S.live).forEach(function (n) { if (names.indexOf(n) < 0) names.push(n); });
     sel.innerHTML = '';
     sel.appendChild(el('option', null, 'Todos os testes')).value = '';
     names.sort().forEach(function (n) { sel.appendChild(el('option', null, n)).value = n; });
@@ -679,7 +717,7 @@
   function runHead(run, live) {
     var head = el('div', 'run-head');
     var t = el('div', 'titles');
-    var h1 = el('h1', null, run.nome && run.nome !== run.teste ? run.nome + ' ' : run.teste + ' ');
+    var h1 = el('h1', null, (many(run) ? runLabel(run) : run.nome || run.teste) + ' ');
     h1.appendChild(badge(live && S.live.cancelando ? 'cancelando' : run.situacao));
     t.appendChild(h1);
     if (run.descricao) t.appendChild(el('p', 'desc', run.descricao));
@@ -691,7 +729,8 @@
       return c;
     }
     var start = toDate(run.inicio);
-    if (run.nome && run.nome !== run.teste) chip('Teste', run.teste);
+    if (!many(run) && run.nome && run.nome !== run.teste) chip('Teste', run.teste);
+    if (many(run)) chip('Testes em sequência', String(testsOf(run).length));
     chip('Início', start ? dmy(start) + ' ' + hms(run.inicio) : '-');
     if (run.fim) chip('Fim', hms(run.fim));
     chip('Duração', dur(runDuration(run)) || '-');
@@ -719,9 +758,9 @@
       act.appendChild(cancel);
     } else if (run.casos && run.casos.length) {
       var again = el('button', 'btn', 'Rodar de novo');
-      again.title = 'Mesmo teste e mesmos casos';
+      again.title = many(run) ? 'Mesmos testes, na mesma ordem, e mesmos casos' : 'Mesmo teste e mesmos casos';
       again.disabled = !!(S.live && !S.live.fim);
-      again.onclick = function () { startRun(run.teste, run.casos.map(function (x) { return x.nome; })); };
+      again.onclick = function () { startRun(testsOf(run), run.casos.map(function (x) { return x.nome; })); };
       act.appendChild(again);
     }
     head.appendChild(act);
@@ -743,7 +782,9 @@
     var cases = run.casos;
     var ok = cases.filter(function (c) { return c.situacao === 'ok'; }).length;
     var steps = 0, badSteps = 0;
-    cases.forEach(function (c) { c.etapas.forEach(function (e) { steps++; if (kind(e.situacao) === 'bad') badSteps++; }); });
+    cases.forEach(function (c) {
+      c.testes.forEach(function (t) { t.etapas.forEach(function (e) { steps++; if (kind(e.situacao) === 'bad') badSteps++; }); });
+    });
     // Relatório sem logs por etapa: usa o resumo de cada caso, sem o total.
     var sum = function (field) { return cases.reduce(function (n, c) { return n + (c[field] || []).length; }, 0); };
     var failedReqs = data.stored ? data.reqs.filter(reqFailed).length : sum('requisicoesComFalha');
@@ -769,10 +810,10 @@
   }
 
   // Abre a etapa na aba Casos.
-  function openStep(ci, k) {
+  function openStep(ci, ti, k) {
     S.caseIdx = ci;
     S.open = {};
-    if (k !== undefined && k !== null) S.open[ci + '/' + k] = true;
+    if (k !== undefined && k !== null) S.open[ci + '/' + (ti || 0) + '/' + k] = true;
     go(S.sel, 'casos');
   }
 
@@ -790,13 +831,26 @@
       frag.appendChild(el('div', 'note', 'Esta rodada não tem casos.'));
       return frag;
     }
+    // Colunas: etapas de cada teste da rodada (todos os casos têm os mesmos).
+    var tests = run.casos[0].testes;
+    var group = tests.length > 1;
     var card = el('div', 'card matrix-wrap');
     var table = el('table', 'matrix');
     var trh = el('tr');
-    trh.appendChild(el('th', null, 'Caso'));
-    var cols = run.casos.reduce(function (m, c) { return c.etapas.length > m.length ? c.etapas : m; }, []);
-    cols.forEach(function (e, i) { trh.appendChild(el('th', null, (i + 1) + '. ' + e.nome)); });
+    var first = el('th', null, 'Caso');
+    if (group) first.rowSpan = 2;
+    trh.appendChild(first);
+    var trs = el('tr');
+    tests.forEach(function (t, ti) {
+      if (group) {
+        var g = el('th', 'group' + (ti ? ' sep' : ''), (ti + 1) + '. ' + t.teste);
+        g.colSpan = Math.max(t.etapas.length, 1);
+        trh.appendChild(g);
+      }
+      t.etapas.forEach(function (e, k) { (group ? trs : trh).appendChild(el('th', k === 0 && ti ? 'sep' : null, (k + 1) + '. ' + e.nome)); });
+    });
     table.appendChild(trh);
+    if (group) table.appendChild(trs);
     run.casos.forEach(function (c, ci) {
       var tr = el('tr');
       var name = el('td', 'case', c.nome);
@@ -805,18 +859,22 @@
       if (c.duracaoMs !== null && c.duracaoMs !== undefined) sub.appendChild(el('span', null, dur(c.duracaoMs)));
       name.appendChild(sub);
       tr.appendChild(name);
-      cols.forEach(function (x, k) {
-        var e = c.etapas[k];
-        var td = el('td', 'cell ' + (e ? kind(e.situacao) : 'idle'));
-        if (e) {
-          td.appendChild(badge(c.etapaAtual === k + 1 && isLive(run) ? 'rodando' : e.situacao));
-          if (e.duracaoMs !== null && e.duracaoMs !== undefined) td.appendChild(el('span', 'd', dur(e.duracaoMs)));
-          var text = e.erro || e.detalhe;
-          if (text) td.appendChild(el('span', 'msg' + (e.erro ? ' err' : ''), typeof text === 'string' ? text : JSON.stringify(text)));
-          td.title = (e.erro || (typeof e.detalhe === 'string' ? e.detalhe : JSON.stringify(e.detalhe)) || e.situacao) + '\nClique para ver logs e requisições da etapa';
-          td.onclick = function () { openStep(ci, k); };
-        }
-        tr.appendChild(td);
+      tests.forEach(function (x, ti) {
+        var t = c.testes[ti];
+        x.etapas.forEach(function (y, k) {
+          var e = t && t.etapas[k];
+          var td = el('td', 'cell ' + (e ? kind(e.situacao) : 'idle') + (k === 0 && ti ? ' sep' : ''));
+          if (e) {
+            var current = isLive(run) && c.testeAtual === ti + 1 && c.etapaAtual === k + 1;
+            td.appendChild(badge(current ? 'rodando' : e.situacao));
+            if (e.duracaoMs !== null && e.duracaoMs !== undefined) td.appendChild(el('span', 'd', dur(e.duracaoMs)));
+            var text = e.erro || e.detalhe;
+            if (text) td.appendChild(el('span', 'msg' + (e.erro ? ' err' : ''), typeof text === 'string' ? text : JSON.stringify(text)));
+            td.title = (e.erro || (typeof e.detalhe === 'string' ? e.detalhe : JSON.stringify(e.detalhe)) || e.situacao) + '\nClique para ver logs e requisições da etapa';
+            td.onclick = function () { openStep(ci, ti, k); };
+          }
+          tr.appendChild(td);
+        });
       });
       table.appendChild(tr);
     });
@@ -833,7 +891,7 @@
       var row = el('div', 'lg ' + l.nivel);
       row.appendChild(el('span', 't', hms(l.ts)));
       row.appendChild(el('span', 'lv', l.nivel === 'error' ? 'erro' : l.nivel));
-      var w = el('span', 'where', whereText(run, l.ci, l.k));
+      var w = el('span', 'where', whereText(run, l.ci, l.ti, l.k));
       w.title = w.textContent;
       row.appendChild(w);
       row.appendChild(el('span', 'm', l.msg));
@@ -891,7 +949,7 @@
       row.appendChild(el('span', 'm', q.metodo));
       row.appendChild(el('span', 'st', q.situacao === 'pending' ? '…' : q.situacao === 'error' ? 'erro' : String(q.status)));
       row.appendChild(el('span', 'ms', q.ms === undefined || q.ms === null ? '' : q.ms + ' ms'));
-      var w = el('span', 'where', whereText(run, q.ci, q.k));
+      var w = el('span', 'where', whereText(run, q.ci, q.ti, q.k));
       w.title = w.textContent;
       row.appendChild(w);
       var u = el('span', 'url', q.url);
@@ -947,51 +1005,64 @@
     if (note) { note.classList.add('case-err'); card.appendChild(note); }
 
     var by = {};
-    function bucket(k) { var key = ci + '/' + k; return by[key] || (by[key] = { logs: [], reqs: [] }); }
-    data.logs.forEach(function (l) { if (l.ci === ci) bucket(l.k).logs.push(l); });
-    data.reqs.forEach(function (q) { if (q.ci === ci) bucket(q.k).reqs.push(q); });
+    function bucket(ti, k) { var key = ti + '/' + k; return by[key] || (by[key] = { logs: [], reqs: [] }); }
+    data.logs.forEach(function (l) { if (l.ci === ci) bucket(l.ti, l.k).logs.push(l); });
+    data.reqs.forEach(function (q) { if (q.ci === ci) bucket(q.ti, q.k).reqs.push(q); });
 
+    // Uma linha do tempo por teste, na ordem em que rodaram no caso.
     var ul = el('ul', 'timeline');
-    stepKeys(c).forEach(function (k) {
-      var b = bucket(k);
-      var hook = typeof k !== 'number';
-      if (hook && !b.logs.length && !b.reqs.length) return;
-      var e = hook ? null : c.etapas[k];
-      var sit = e ? (c.etapaAtual === k + 1 && isLive(run) ? 'rodando' : e.situacao) : null;
-      var key = ci + '/' + k;
-      var li = el('li', 'step');
-      var row = el('div', 'step-row');
-      row.appendChild(html('span', 'step-ico ' + (e ? kind(sit) : 'idle'), e ? STEP_ICON[kind(sit)] : ICON.hook));
-      var mid = el('div');
-      var name = el('div', 'step-name');
-      if (hook) name.appendChild(el('span', 'hook', k === 'antes' ? 'antes (preparação do caso)' : 'depois (limpeza do caso)'));
-      else {
-        name.appendChild(document.createTextNode(stepLabel(c, k) + ' '));
-        name.appendChild(badge(sit));
+    var group = c.testes.length > 1;
+    c.testes.forEach(function (t, ti) {
+      if (group) {
+        var th = el('li', 'test-h');
+        th.appendChild(el('span', 'test-n', String(ti + 1)));
+        th.appendChild(el('strong', null, t.teste));
+        th.appendChild(badge(isLive(run) && c.testeAtual === ti + 1 && t.situacao === 'rodando' ? 'rodando' : t.situacao));
+        if (t.duracaoMs !== null && t.duracaoMs !== undefined) th.appendChild(el('span', 'note', dur(t.duracaoMs)));
+        if (t.erro) th.appendChild(el('span', 'step-txt err', t.erro));
+        ul.appendChild(th);
       }
-      mid.appendChild(name);
-      if (e && e.erro) mid.appendChild(el('div', 'step-txt err', e.erro));
-      if (e && e.detalhe) mid.appendChild(el('div', 'step-txt', typeof e.detalhe === 'string' ? e.detalhe : JSON.stringify(e.detalhe)));
-      row.appendChild(mid);
-      var side = el('div', 'step-side', e && e.duracaoMs !== null && e.duracaoMs !== undefined ? dur(e.duracaoMs) : '');
-      var errs = b.logs.filter(function (l) { return l.nivel === 'error'; }).length;
-      if (data.stored) side.appendChild(el('span', 'cnt', b.logs.length + ' log(s)' + (errs ? ' · ' + errs + ' erro(s)' : '') + ' · ' + b.reqs.length + ' req.'));
-      row.appendChild(side);
-      if (data.stored) row.onclick = function () {
-        if (S.open[key]) delete S.open[key];
-        else S.open[key] = true;
-        render();
-      };
-      li.appendChild(row);
-      if (S.open[key] && data.stored) {
-        var det = el('div', 'step-det');
-        det.appendChild(el('div', 'sub-h', 'Logs (' + b.logs.length + ')'));
-        det.appendChild(logRows(run, b.logs, true));
-        det.appendChild(el('div', 'sub-h', 'Requisições (' + b.reqs.length + ')'));
-        det.appendChild(reqRows(run, b.reqs, true));
-        li.appendChild(det);
-      }
-      ul.appendChild(li);
+      stepKeys(t).forEach(function (k) {
+        var b = bucket(ti, k);
+        var hook = typeof k !== 'number';
+        if (hook && !b.logs.length && !b.reqs.length) return;
+        var e = hook ? null : t.etapas[k];
+        var sit = e ? (isLive(run) && c.testeAtual === ti + 1 && c.etapaAtual === k + 1 ? 'rodando' : e.situacao) : null;
+        var key = ci + '/' + ti + '/' + k;
+        var li = el('li', 'step' + (group ? ' in-test' : ''));
+        var row = el('div', 'step-row');
+        row.appendChild(html('span', 'step-ico ' + (e ? kind(sit) : 'idle'), e ? STEP_ICON[kind(sit)] : ICON.hook));
+        var mid = el('div');
+        var name = el('div', 'step-name');
+        if (hook) name.appendChild(el('span', 'hook', k === 'antes' ? 'antes (preparação do teste)' : 'depois (limpeza do teste)'));
+        else {
+          name.appendChild(document.createTextNode(stepLabel(t, k) + ' '));
+          name.appendChild(badge(sit));
+        }
+        mid.appendChild(name);
+        if (e && e.erro) mid.appendChild(el('div', 'step-txt err', e.erro));
+        if (e && e.detalhe) mid.appendChild(el('div', 'step-txt', typeof e.detalhe === 'string' ? e.detalhe : JSON.stringify(e.detalhe)));
+        row.appendChild(mid);
+        var side = el('div', 'step-side', e && e.duracaoMs !== null && e.duracaoMs !== undefined ? dur(e.duracaoMs) : '');
+        var errs = b.logs.filter(function (l) { return l.nivel === 'error'; }).length;
+        if (data.stored) side.appendChild(el('span', 'cnt', b.logs.length + ' log(s)' + (errs ? ' · ' + errs + ' erro(s)' : '') + ' · ' + b.reqs.length + ' req.'));
+        row.appendChild(side);
+        if (data.stored) row.onclick = function () {
+          if (S.open[key]) delete S.open[key];
+          else S.open[key] = true;
+          render();
+        };
+        li.appendChild(row);
+        if (S.open[key] && data.stored) {
+          var det = el('div', 'step-det');
+          det.appendChild(el('div', 'sub-h', 'Logs (' + b.logs.length + ')'));
+          det.appendChild(logRows(run, b.logs, true));
+          det.appendChild(el('div', 'sub-h', 'Requisições (' + b.reqs.length + ')'));
+          det.appendChild(reqRows(run, b.reqs, true));
+          li.appendChild(det);
+        }
+        ul.appendChild(li);
+      });
     });
     card.appendChild(ul);
     if (c.dados && Object.keys(c.dados).length) {
@@ -1022,7 +1093,7 @@
       if (p.ci !== undefined) {
         var a = el('a', null, p.what);
         a.title = 'Abrir a etapa na aba Casos';
-        a.onclick = function () { openStep(p.ci, p.k); };
+        a.onclick = function () { openStep(p.ci, p.ti, p.k); };
         what.appendChild(a);
       } else what.textContent = p.what;
       body.appendChild(what);
@@ -1141,12 +1212,39 @@
   }
 
   // ---- nova rodada ----
-  function selectedTest() {
-    return S.tests && S.tests.testes.filter(function (t) { return t.id === S.newTest; })[0];
+  function testInfo(id) {
+    return S.tests && S.tests.testes.filter(function (t) { return t.id === id; })[0];
   }
 
-  function startRun(test, cases) {
-    api('POST', '/tests/run', { test: test, cases: cases }).then(function (r) {
+  // Mesma regra do servidor: o que cada teste requer vem antes dele na lista.
+  function orderProblems(order) {
+    var out = [];
+    order.forEach(function (id, i) {
+      var t = testInfo(id);
+      ((t && t.requer) || []).forEach(function (req) {
+        var at = order.indexOf(req);
+        if (at < 0 || at > i) out.push(id + ' requer ' + req + ' antes dele');
+      });
+    });
+    return out;
+  }
+  function fixOrder(order) {
+    var out = [];
+    order.forEach(function (id) {
+      var t = testInfo(id);
+      ((t && t.requer) || []).forEach(function (req) { if (out.indexOf(req) < 0 && testInfo(req)) out.push(req); });
+      if (out.indexOf(id) < 0) out.push(id);
+    });
+    return out;
+  }
+  function setOrder(order) {
+    S.order = order;
+    store('testOrder', order);
+    render();
+  }
+
+  function startRun(tests, cases) {
+    api('POST', '/tests/run', { tests: tests, cases: cases }).then(function (r) {
       S.live = r;
       S.liveData = null;
       toast('Rodada ' + r.id + ' iniciada');
@@ -1164,7 +1262,7 @@
     page.appendChild(head);
     var busy = S.live && !S.live.fim;
     if (busy) {
-      var b = el('div', 'banner info', 'Já há uma rodada em andamento (' + S.live.teste + ', ' + S.live.id + '). ');
+      var b = el('div', 'banner info', 'Já há uma rodada em andamento (' + runLabel(S.live) + ', ' + S.live.id + '). ');
       var a = el('a', null, 'Acompanhar');
       a.href = '#/r/' + encodeURIComponent(S.live.id) + '/resumo';
       b.appendChild(a);
@@ -1184,45 +1282,105 @@
       var e = el('div', 'empty');
       e.appendChild(html('div', 'ill', ICON.flask));
       e.appendChild(el('strong', null, 'Nenhum teste em .devbridge/tests/'));
-      e.appendChild(el('p', null, 'Crie <nome>.test.js com __devbridgeRunner.registrar(...) e os casos em <nome>.local.json. O manual (seção 8) tem o formato.'));
+      e.appendChild(el('p', null, 'Crie <nome>.test.js com __devbridgeRunner.registrar(...) e os casos em casos.local.json. O manual (seção 8) tem o formato.'));
       page.appendChild(e);
       return page;
     }
-    var test = selectedTest() || S.tests.testes[0];
+    S.order = S.order.filter(function (id) { return testInfo(id); });
+    if (!S.order.length) S.order = [S.tests.testes[0].id];
+    var order = S.order;
+    var first = testInfo(order[0]);
     var card = el('div', 'card');
     var form = el('div', 'form');
 
+    // Testes: clique inclui ou tira; a ordem é a de inclusão, ajustável abaixo.
     var f1 = el('div');
-    f1.appendChild(el('label', 'cap', 'Teste'));
-    var sel = el('select', 'field');
-    S.tests.testes.forEach(function (x) { sel.appendChild(el('option', null, x.id)).value = x.id; });
-    sel.value = test.id;
-    sel.onchange = function () { S.newTest = sel.value; store('test', sel.value); render(); };
-    f1.appendChild(sel);
-    if (test.descricao) f1.appendChild(el('p', 'help', test.descricao));
-    if (test.erro) f1.appendChild(el('div', 'err-txt', 'Erro ao carregar no app: ' + test.erro));
+    f1.appendChild(el('label', 'cap', 'Testes'));
+    var picks = el('div', 'test-picks');
+    S.tests.testes.forEach(function (x) {
+      var on = order.indexOf(x.id) >= 0;
+      var p = el('button', 'test-pick' + (on ? ' on' : ''));
+      p.appendChild(el('span', 'pick-n', on ? String(order.indexOf(x.id) + 1) : '+'));
+      p.appendChild(el('span', null, x.id));
+      if (x.requer && x.requer.length) p.appendChild(el('small', null, 'requer ' + x.requer.join(', ')));
+      p.title = (x.descricao || x.id) + (on ? '\nClique para tirar da rodada' : '\nClique para incluir na rodada');
+      p.onclick = function () {
+        if (on) { if (order.length > 1) setOrder(order.filter(function (id) { return id !== x.id; })); }
+        else setOrder(order.concat(x.id));
+      };
+      picks.appendChild(p);
+    });
+    f1.appendChild(picks);
+    f1.appendChild(el('p', 'help', 'Com mais de um teste, cada caso roda todos em sequência, sem restaurar o aparelho entre eles: o seguinte começa no estado deixado pelo anterior. Se um falha, os seguintes daquele caso ficam pulados.'));
+    if (S.tests.comum && S.tests.comum.length) f1.appendChild(el('p', 'help', 'Código comum carregado antes: ' + S.tests.comum.map(function (f) { return f.replace(/^.*\//, ''); }).join(', ') + '.'));
     form.appendChild(f1);
 
+    // Ordem, com as etapas de cada teste.
     var f2 = el('div');
-    f2.appendChild(el('label', 'cap', 'Etapas'));
-    if (test.etapas && test.etapas.length) {
-      var chips = el('div', 'steps-chips');
-      test.etapas.forEach(function (x, i) {
-        var c = el('span', null, (i + 1) + '. ' + x.nome);
-        c.appendChild(el('small', null, dur(x.tempoLimiteMs)));
-        chips.appendChild(c);
-      });
-      f2.appendChild(chips);
-    } else f2.appendChild(el('p', 'help', 'Abra o app para listar as etapas.'));
+    f2.appendChild(el('label', 'cap', order.length > 1 ? 'Ordem da rodada' : 'Etapas'));
+    var ol = el('ol', 'order-list');
+    order.forEach(function (id, i) {
+      var x = testInfo(id);
+      var li = el('li');
+      if (order.length > 1) li.appendChild(el('span', 'test-n', String(i + 1)));
+      var mid = el('div', 'grow');
+      var title = el('div', 'order-t', id);
+      if (x.descricao) title.appendChild(el('span', 'note', ' · ' + x.descricao));
+      mid.appendChild(title);
+      if (x.etapas && x.etapas.length) {
+        var chips = el('div', 'steps-chips');
+        x.etapas.forEach(function (st, k) {
+          var c = el('span', null, (k + 1) + '. ' + st.nome);
+          c.appendChild(el('small', null, dur(st.tempoLimiteMs)));
+          chips.appendChild(c);
+        });
+        mid.appendChild(chips);
+      } else mid.appendChild(el('p', 'help', 'Abra o app para listar as etapas.'));
+      if (x.erro) mid.appendChild(el('div', 'err-txt', 'Erro ao carregar no app: ' + x.erro));
+      li.appendChild(mid);
+      if (order.length > 1) {
+        var tools = el('div', 'order-tools');
+        var move = function (label, title, to) {
+          var btn = el('button', 'btn small', label);
+          btn.title = title;
+          btn.disabled = to < 0 || to >= order.length;
+          btn.onclick = function () {
+            var next = order.slice();
+            next.splice(i, 1);
+            next.splice(to, 0, id);
+            setOrder(next);
+          };
+          tools.appendChild(btn);
+        };
+        move('↑', 'Rodar antes', i - 1);
+        move('↓', 'Rodar depois', i + 1);
+        var rm = el('button', 'btn small', '✕');
+        rm.title = 'Tirar da rodada';
+        rm.onclick = function () { setOrder(order.filter(function (y) { return y !== id; })); };
+        tools.appendChild(rm);
+        li.appendChild(tools);
+      }
+      ol.appendChild(li);
+    });
+    f2.appendChild(ol);
+    var probs = orderProblems(order);
+    if (probs.length) {
+      var warn = el('div', 'banner bad order-warn', 'Ordem inválida: ' + probs.join('; ') + '. ');
+      var fix = el('button', 'btn small', 'Ajustar a ordem');
+      fix.onclick = function () { setOrder(fixOrder(order)); };
+      warn.appendChild(fix);
+      f2.appendChild(warn);
+    }
     form.appendChild(f2);
 
+    // Casos: os do primeiro teste da lista.
     var f3 = el('div');
-    f3.appendChild(el('label', 'cap', 'Casos' + (test.arquivoCasos ? ' · ' + test.arquivoCasos : ' · sem arquivo de casos: roda uma vez com um caso vazio')));
-    var checked = S.checked[test.id] || (S.checked[test.id] = {});
-    if (test.erroCasos) f3.appendChild(el('div', 'err-txt', test.erroCasos));
+    f3.appendChild(el('label', 'cap', 'Casos' + (first.arquivoCasos ? ' · ' + first.arquivoCasos : ' · sem arquivo de casos: roda uma vez com um caso vazio')));
+    var checked = S.checked[first.id] || (S.checked[first.id] = {});
+    if (first.erroCasos) f3.appendChild(el('div', 'err-txt', first.erroCasos));
     else {
       var box = el('div', 'case-checks');
-      test.casos.forEach(function (nome) {
+      first.casos.forEach(function (nome) {
         var lab = el('label');
         var cb = el('input');
         cb.type = 'checkbox';
@@ -1233,29 +1391,30 @@
         box.appendChild(lab);
       });
       f3.appendChild(box);
-      if (test.casos.length > 1) {
+      if (first.casos.length > 1) {
         var all = el('div', 'actions');
         all.style.marginTop = '8px';
         [['Todos', true], ['Nenhum', false]].forEach(function (o) {
           var x = el('button', 'btn small', o[0]);
-          x.onclick = function () { test.casos.forEach(function (n) { checked[n] = o[1]; }); render(); };
+          x.onclick = function () { first.casos.forEach(function (n) { checked[n] = o[1]; }); render(); };
           all.appendChild(x);
         });
         f3.appendChild(all);
       }
+      if (order.length > 1) f3.appendChild(el('p', 'help', 'Os casos vêm do primeiro teste da lista; para uma sequência, use .devbridge/tests/casos.local.json, que vale para todos.'));
     }
     form.appendChild(f3);
 
-    var cases = (test.casos || []).filter(function (n) { return checked[n] !== false; });
+    var cases = (first.casos || []).filter(function (n) { return checked[n] !== false; });
     var go1 = el('div', 'actions');
-    var run = el('button', 'btn primary', 'Rodar ' + cases.length + ' caso(s)');
-    run.disabled = busy || appOff || !cases.length || !!test.erroCasos;
-    run.onclick = function () { run.disabled = true; startRun(test.id, cases); };
+    var run = el('button', 'btn primary', 'Rodar ' + cases.length + ' caso(s)' + (order.length > 1 ? ' × ' + order.length + ' testes' : ''));
+    run.disabled = busy || appOff || !cases.length || !!first.erroCasos || probs.length > 0;
+    run.onclick = function () { run.disabled = true; startRun(order, cases); };
     go1.appendChild(run);
     form.appendChild(go1);
     card.appendChild(form);
     page.appendChild(card);
-    page.appendChild(el('p', 'help', 'Pelo MCP: tests_run; pela CLI: devbridge test run ' + test.id + '. O resultado fica em .devbridge/test-runs/ e aparece no histórico ao lado.'));
+    page.appendChild(el('p', 'help', 'Pelo MCP: tests_run com tests ' + JSON.stringify(order) + '; pela CLI: devbridge test run ' + order.join(' ') + '. O resultado fica em .devbridge/test-runs/ e aparece no histórico ao lado.'));
     return page;
   }
 
@@ -1386,8 +1545,9 @@
     api('GET', '/tests').then(function (r) {
       S.tests = r;
       var saved = store('test');
-      if (!S.newTest || !r.testes.some(function (t) { return t.id === S.newTest; })) {
-        S.newTest = r.testes.some(function (t) { return t.id === saved; }) ? saved : r.testes[0] && r.testes[0].id;
+      if (!S.order.length) {
+        var saved = [].concat(store('testOrder') || []).filter(function (id) { return r.testes.some(function (t) { return t.id === id; }); });
+        S.order = saved.length ? saved : r.testes.length ? [r.testes[0].id] : [];
       }
       render();
     }).catch(function (e) { S.testsError = e.message; render(); });

@@ -217,6 +217,7 @@ O devbridge roda no aparelho testes que o próprio app escreve. Cada etapa chama
 | Arquivo | Versionado | Conteúdo |
 |---|---|---|
 | `.devbridge/tests/<nome>.test.js` | sim | o teste; roda dentro do app |
+| `.devbridge/tests/<nome>.comum.js` | sim | código comum aos testes, carregado antes deles (seção 8.3) |
 | `.devbridge/tests/<nome>.local.json` ou `casos.local.json` | não | os casos, um por execução (usuário, senha, código de acesso…) |
 
 Para versionar os testes e deixar o resto de `.devbridge/` fora do Git, troque a linha da seção 3.4 por:
@@ -237,6 +238,8 @@ O arquivo chama `__devbridgeRunner.registrar` uma vez:
   window.__devbridgeRunner.registrar({
     nome: 'login',
     descricao: 'Faz login e chega à home',
+    // opcional: testes que precisam rodar antes deste na mesma rodada (seção 8.4)
+    requer: [],
     // opcional: preparo; se falhar, o caso termina como "erro" e as etapas ficam puladas
     antes: function (ctx) {
       return ctx.esperar(function () { return ctx.estadoAtual() === 'login'; }, 60000, 'a tela de login');
@@ -274,8 +277,9 @@ O `ctx` tem:
 | Campo | Para quê |
 |---|---|
 | `caso` | o caso desta execução, inteiro (só existe dentro do app) |
-| `dados` | objeto livre para as etapas do caso trocarem dados |
-| `publico` | o que vai para o relatório e para o `tests_status` (não ponha credencial aqui) |
+| `dados` | objeto livre para as etapas trocarem dados; é o mesmo para todos os testes do caso numa sequência |
+| `publico` | o que vai para o relatório e para o `tests_status` (não ponha credencial aqui); também é do caso inteiro |
+| `comum` | as funções publicadas pelos `*.comum.js` (o mesmo que `__devbridgeRunner.comum`) |
 | `esperar(condicao, tempoMs, descricao)` | promessa que resolve quando `condicao()` fica verdadeira; rejeita no tempo ou no cancelamento |
 | `dormir(ms)` | pausa |
 | `servico(nome)` | serviço do AngularJS pelo `injector` |
@@ -287,7 +291,30 @@ O `ctx` tem:
 
 Logs e requisições feitos durante uma etapa ficam marcados com ela; o `tests_status` e a tela de testes mostram os de cada etapa. O arquivo entra no app por eval, com o nome `devbridge-tests/<nome>.test.js` nas stack traces e no DevTools; um app com `Content-Security-Policy` sem `'unsafe-eval'` não roda testes.
 
-### 8.3 Casos
+### 8.3 Código comum
+
+Código que mais de um teste usa (esperar o boot do app, ler as mensagens da tela, a `analisarResposta`) vai num `.devbridge/tests/<nome>.comum.js`. Todos os `*.comum.js` rodam no app antes de qualquer teste, em ordem alfabética, e de novo depois que o app recarrega. Eles publicam funções com `compartilhar`:
+
+```js
+// .devbridge/tests/app.comum.js
+window.__devbridgeRunner.compartilhar({
+  esperarBoot: function (ctx) {
+    return ctx.esperar(function () { return ctx.estadoAtual() !== 'carregando'; }, 60000, 'o fim do boot');
+  },
+});
+```
+
+No teste, use `ctx.comum.esperarBoot(ctx)` dentro das funções ou `__devbridgeRunner.comum` no corpo do arquivo, por exemplo `antes: __devbridgeRunner.comum.esperarBoot`. Mudou um `*.comum.js`, os testes são carregados de novo na próxima rodada. O nome `devbridge-tests/<nome>.comum.js` aparece nas stack traces.
+
+### 8.4 Testes em sequência
+
+Uma rodada pode rodar vários testes em ordem: `dvb test run login checkout` ou `tests_run` com `tests: ["login", "checkout"]`. Em cada caso, os testes rodam um depois do outro, sem restaurar o aparelho entre eles: o `checkout` começa com o usuário que o `login` deixou logado, e `ctx.dados` e `ctx.publico` passam de um teste para o outro. A restauração acontece uma vez só, no fim da rodada.
+
+- Se um teste não passa num caso, os seguintes daquele caso ficam `pulado`, e o caso seguinte começa normalmente, desde o primeiro teste.
+- Um teste que depende de outro declara `requer: ['login']`. A rodada que não tiver o `login` antes dele é recusada antes de mexer no aparelho, com a ordem certa na mensagem.
+- Os casos são os do primeiro teste da lista. Para uma sequência, use `casos.local.json`, que vale para todos.
+
+### 8.5 Casos
 
 `<nome>.local.json` (só daquele teste) ou `casos.local.json` (de todos): uma lista, ou um objeto com a lista, e cada caso com um `nome` único.
 
@@ -300,33 +327,35 @@ Logs e requisições feitos durante uma etapa ficam marcados com ela; o `tests_s
 
 O caso vai para o app pelo canal do devbridge, sem passar pelo `eval-history.log`. Do caso, só o `nome` sai do app: andamento, relatório e histórico não têm os outros campos. Sem arquivo de casos, o teste roda uma vez com um caso vazio.
 
-### 8.4 Rodando
+### 8.6 Rodando
 
 ```bash
 dvb test list                          # testes, etapas e casos
 dvb test run login                     # todos os casos; Ctrl+C cancela e restaura
 dvb test run login --case "Homologação A"
-dvb test status                        # tabela caso × etapa
+dvb test run login checkout            # em cada caso, login e depois checkout
+dvb test status                        # tabela caso × teste × etapa
 dvb test status --case 1 --step 1      # logs e requisições daquela etapa
+dvb test status --case 1 --test checkout --step 2   # numa sequência, diga o teste
 dvb test runs                          # histórico das rodadas gravadas
 dvb test status <ID> --case 2 --step 1 # etapa de uma rodada anterior
 ```
 
-Pelo MCP: `tests_list` (também lista as últimas rodadas), `tests_run`, `tests_status` (com `waitMs` para esperar o fim; com `case` e `step` para a etapa; com `id` para uma rodada anterior) e `tests_cancel`.
+Pelo MCP: `tests_list` (também lista o código comum, o `requer` de cada teste e as últimas rodadas), `tests_run` (com `tests` para uma sequência), `tests_status` (com `waitMs` para esperar o fim; com `case`, `test` e `step` para a etapa; com `id` para uma rodada anterior) e `tests_cancel`.
 
 No navegador, o botão "Testes" do console abre `http://localhost:8100/__devbridge/tests`:
 - à esquerda, o histórico das rodadas (do mais novo ao mais antigo, agrupado por dia, com filtro por teste); a rodada em andamento fica no topo e a tela acompanha sozinha, mesmo se ela foi iniciada pelo MCP ou pela CLI;
 - no topo da rodada, indicadores: casos ok, etapas com falha, requisições com falha, logs de erro e problemas;
-- abas: Resumo (tabela caso × etapa; clique numa célula para abrir a etapa), Casos (linha do tempo de cada caso, com os logs e as requisições de cada etapa e os dados públicos), Problemas (tudo o que falhou, com link para a etapa), Logs e Requisições (com filtro por caso, nível, URL e só falhas; clique numa requisição para ver cabeçalhos e corpo, se ainda estiver no inspetor de rede) e JSON (o relatório, para copiar ou baixar);
-- "Nova rodada" escolhe o teste e os casos; "Rodar de novo" repete o teste e os casos de uma rodada.
+- abas: Resumo (tabela caso × etapa, com as etapas agrupadas por teste numa sequência; clique numa célula para abrir a etapa), Casos (linha do tempo de cada caso, teste a teste, com os logs e as requisições de cada etapa e os dados públicos), Problemas (tudo o que falhou, com link para a etapa), Logs e Requisições (com filtro por caso, nível, URL e só falhas; clique numa requisição para ver cabeçalhos e corpo, se ainda estiver no inspetor de rede) e JSON (o relatório, para copiar ou baixar);
+- "Nova rodada" escolhe um ou mais testes, a ordem (↑/↓, com aviso se um `requer` ficar fora de ordem) e os casos; "Rodar de novo" repete os testes e os casos de uma rodada.
 
 Uma rodada:
 1. guarda `localStorage` e NativeStorage do app e tira um snapshot completo dos bancos (o app fecha e reabre);
-2. roda os casos um por vez, mostrando a etapa atual, a duração e o erro;
-3. no fim de cada caso, junta os logs de erro e as requisições com falha; se o caso falhou e o teste tem `analisarResposta`, passa as respostas do período para ela;
+2. roda os casos um por vez e, em cada caso, os testes da lista em ordem, mostrando o teste e a etapa atuais, a duração e o erro;
+3. no fim de cada caso, junta os logs de erro e as requisições com falha; se o caso falhou, passa as respostas de cada teste à `analisarResposta` dele, se houver;
 4. devolve o armazenamento e os bancos ao estado de antes, apagando os bancos criados na rodada (o app fecha e reabre de novo). Isso vale também para rodada com falha ou cancelada.
 
-Só uma rodada por vez. O relatório fica em `.devbridge/test-runs/<id>-<teste>.json`, com horários no fuso do PC, e guarda também os logs e o resumo das requisições (sem corpo) de cada etapa, para o histórico; o corpo só fica no inspetor de rede enquanto ele tiver a requisição. O log de cada etapa é o que o app escreveu e o agente o lê pelo `tests_status`, então não registre credenciais no console (a máscara vale só para a rede). O histórico de eventos das rodadas fica em `.devbridge/test-history.log`. Se a restauração der certo, o snapshot e a cópia do armazenamento são apagados; se falhar, ficam lá e o relatório diz como restaurar à mão.
+Só uma rodada por vez. O relatório fica em `.devbridge/test-runs/<id>-<teste>.json` (numa sequência, `<id>-login+checkout.json`), com horários no fuso do PC, e guarda também os logs e o resumo das requisições (sem corpo) de cada etapa, para o histórico; o corpo só fica no inspetor de rede enquanto ele tiver a requisição. O log de cada etapa é o que o app escreveu e o agente o lê pelo `tests_status`, então não registre credenciais no console (a máscara vale só para a rede). O histórico de eventos das rodadas fica em `.devbridge/test-history.log`. Se a restauração der certo, o snapshot e a cópia do armazenamento são apagados; se falhar, ficam lá e o relatório diz como restaurar à mão.
 
 Durante a rodada, o app manda até 256 KB de cada corpo de requisição (32 KB fora dela), para respostas grandes poderem ser analisadas.
 

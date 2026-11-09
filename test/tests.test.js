@@ -137,13 +137,13 @@ test('rodada: casos em sequência, falha, tempo limite, pulada, relatório e apa
     const [ana, bia, lenta] = run.casos;
 
     assert.equal(ana.situacao, 'ok');
-    assert.deepEqual(ana.etapas.map((e) => e.situacao), ['ok', 'ok', 'ok']);
-    assert.equal(ana.etapas[0].detalhe, 'logado');
+    assert.deepEqual(ana.testes[0].etapas.map((e) => e.situacao), ['ok', 'ok', 'ok']);
+    assert.equal(ana.testes[0].etapas[0].detalhe, 'logado');
     assert.deepEqual(ana.dados, { usuario: 'ana', depois: true });
 
     assert.equal(bia.situacao, 'falha');
-    assert.deepEqual(bia.etapas.map((e) => e.situacao), ['falha', 'pulada', 'pulada']);
-    assert.equal(bia.etapas[0].erro, 'Senha inválida');
+    assert.deepEqual(bia.testes[0].etapas.map((e) => e.situacao), ['falha', 'pulada', 'pulada']);
+    assert.equal(bia.testes[0].etapas[0].erro, 'Senha inválida');
     assert.deepEqual(bia.errosNoLog.map((e) => [e.msg, e.etapa]), [['senha recusada', 1]]);
     assert.equal(bia.requisicoesComFalha.length, 1);
     assert.match(bia.requisicoesComFalha[0].url, /\/api\/login$/);
@@ -152,8 +152,8 @@ test('rodada: casos em sequência, falha, tempo limite, pulada, relatório e apa
     assert.match(bia.respostasComErro[0].achado, /login recusado pelo servidor/);
 
     assert.equal(lenta.situacao, 'falha');
-    assert.deepEqual(lenta.etapas.map((e) => e.situacao), ['ok', 'ok', 'falha']);
-    assert.equal(lenta.etapas[2].erro, 'Etapa "Esperar" passou do tempo limite de 200 ms.');
+    assert.deepEqual(lenta.testes[0].etapas.map((e) => e.situacao), ['ok', 'ok', 'falha']);
+    assert.equal(lenta.testes[0].etapas[2].erro, 'Etapa "Esperar" passou do tempo limite de 200 ms.');
 
     assert.equal(run.situacao, 'falha');
     assert.equal(run.restauracao.ok, true, JSON.stringify(run.restauracao));
@@ -186,13 +186,13 @@ test('rodada: casos em sequência, falha, tempo limite, pulada, relatório e apa
     const old = s.server.tests.readReport(run.id);
     assert.equal(old.doRelatorio, true);
     assert.match(testsStatus(old), /2\. Bia — FALHA/);
-    assert.equal(old.casos[1].etapas[0].erro, 'Senha inválida');
+    assert.equal(old.casos[1].testes[0].etapas[0].erro, 'Senha inválida');
 
     // rodada encerrada com id: vem do relatório, que guarda os logs de cada etapa
     const fin = await s.api.testStatus({ id: run.id });
     assert.equal(fin.doRelatorio, true);
-    assert.deepEqual(fin.casos[1].etapas[0].logs.map((l) => l.msg), ['login de bia', 'senha recusada']);
-    assert.equal(fin.casos[1].etapas[0].requisicoes.length, 1);
+    assert.deepEqual(fin.casos[1].testes[0].etapas[0].logs.map((l) => l.msg), ['login de bia', 'senha recusada']);
+    assert.equal(fin.casos[1].testes[0].etapas[0].requisicoes.length, 1);
     const liveUrl = `http://127.0.0.1:${s.server.port}/__devbridge/api/tests/live`;
     const live = await (await fetch(liveUrl, { headers: { 'X-Devbridge': '1' } })).json();
     assert.equal(live.rodada.id, run.id);
@@ -227,7 +227,7 @@ test('rodada: casos em sequência, falha, tempo limite, pulada, relatório e apa
     // relatório antigo, sem logs por etapa
     const file = path.join(s.root, run.relatorio);
     const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
-    delete legacy.casos[1].etapas[0].logs;
+    delete legacy.casos[1].testes[0].etapas[0].logs;
     fs.writeFileSync(file, JSON.stringify(legacy));
     assert.match((await s.api.testStatus({ id: run.id, case: '2', step: '1' })).aviso, /não guardou os logs/);
     // relatório ilegível entra no histórico sem derrubar a lista
@@ -260,7 +260,7 @@ test('cancelamento: caso atual para, seguintes pulados, aparelho restaurado', as
     assert.equal(c.cancelando, true);
     const run = await s.api.testStatus({ waitMs: 10000 });
     assert.equal(run.situacao, 'cancelada');
-    assert.deepEqual(run.casos[0].etapas.map((e) => e.situacao), ['ok', 'ok', 'cancelada']);
+    assert.deepEqual(run.casos[0].testes[0].etapas.map((e) => e.situacao), ['ok', 'ok', 'cancelada']);
     assert.equal(run.casos[1].situacao, 'pulado');
     assert.equal(run.restauracao.ok, true, JSON.stringify(run.restauracao));
     assert.deepEqual(s.device.files, { 'Param.db': 'p0' });
@@ -301,7 +301,7 @@ test('app que recarrega no meio do caso vira erro do caso, e o aparelho é resta
     const run = await s.api.testStatus({ waitMs: 10000 });
     assert.equal(run.casos[0].situacao, 'erro');
     assert.match(run.casos[0].erro, /recarregou durante o caso/);
-    assert.equal(run.casos[0].etapas[2].situacao, 'falha');
+    assert.equal(run.casos[0].testes[0].etapas[2].situacao, 'falha');
     assert.equal(run.restauracao.ok, true, JSON.stringify(run.restauracao));
     assert.deepEqual(s.device.files, { 'Param.db': 'p0' });
   } finally {
@@ -344,6 +344,161 @@ test('MCP por stdio: tests_list, tests_run, tests_status (tabela e etapa) e test
     assert.equal(cancel.isError, true);
   } finally {
     child.kill();
+    await teardown(s);
+  }
+});
+
+// Segundo teste, encadeado depois do fluxo: começa logado e usa o código comum.
+const CHECKOUT = `(function () {
+  var comum = __devbridgeRunner.comum;
+  __devbridgeRunner.registrar({
+    nome: 'checkout',
+    descricao: 'pedido com o usuário já logado',
+    requer: ['fluxo'],
+    etapas: [
+      { nome: 'Carrinho', tempoLimiteMs: 2000, executar: function (ctx) {
+        if (!ctx.dados.antes) throw new Error('sem os dados do teste anterior');
+        console.log('checkout de ' + localStorage.getItem('sessao'));
+        ctx.publico.pedido = comum.pedido(ctx.publico.usuario);
+        return 'sessão ' + localStorage.getItem('sessao');
+      } },
+      { nome: 'Fechar', tempoLimiteMs: 2000, executar: function (ctx) { return ctx.comum.pedido('fim'); } },
+    ],
+  });
+})();`;
+const COMUM = `__devbridgeRunner.compartilhar({ pedido: function (u) { return 'pedido-' + u; } });`;
+
+test('testes encadeados: cada caso roda fluxo e checkout sem restaurar no meio; falha pula o seguinte', async () => {
+  const s = await setup([
+    { nome: 'Ana', usuario: 'ana', senha: 'certa' },
+    { nome: 'Bia', usuario: 'bia', senha: SECRET },
+    { nome: 'Cida', usuario: 'cida', senha: 'certa' },
+  ]);
+  const dir = path.join(s.root, '.devbridge/tests');
+  fs.writeFileSync(path.join(dir, 'checkout.test.js'), CHECKOUT);
+  fs.writeFileSync(path.join(dir, 'pedido.comum.js'), COMUM);
+  try {
+    const list = await s.api.tests();
+    assert.deepEqual(list.comum, ['.devbridge/tests/pedido.comum.js']);
+    assert.deepEqual(list.testes.map((t) => [t.id, t.requer]), [['checkout', ['fluxo']], ['fluxo', []]]);
+    assert.match(testsList(list), /checkout — pedido com o usuário já logado[\s\S]*requer antes, na mesma rodada: fluxo/);
+    assert.match(testsList(list), /Código comum \(carregado antes dos testes\): \.devbridge\/tests\/pedido\.comum\.js/);
+    await assert.rejects(s.api.testRun({ tests: ['fluxo', 'fluxo'] }), /Teste repetido/);
+
+    const boots = s.device.boots;
+    const started = await s.api.testRun({ tests: ['fluxo', 'checkout'] });
+    assert.deepEqual(started.testes, ['fluxo', 'checkout']);
+    const run = await s.api.testStatus({ waitMs: 20000 });
+    assert.ok(run.fim);
+    assert.equal(s.device.boots - boots, 2, 'só o snapshot e o restore do fim reabrem o app');
+    const [ana, bia, cida] = run.casos;
+    assert.deepEqual(ana.testes.map((t) => [t.teste, t.situacao]), [['fluxo', 'ok'], ['checkout', 'ok']]);
+    assert.equal(ana.situacao, 'ok');
+    assert.equal(ana.testes[1].etapas[0].detalhe, 'sessão ana', 'o checkout vê o login do fluxo');
+    assert.equal(ana.testes[1].etapas[1].detalhe, 'pedido-fim', 'ctx.comum');
+    assert.deepEqual(ana.dados, { usuario: 'ana', depois: true, pedido: 'pedido-ana' }, 'ctx.publico do caso inteiro');
+    assert.deepEqual(bia.testes.map((t) => t.situacao), ['falha', 'pulado']);
+    assert.deepEqual(bia.testes[1].etapas.map((e) => e.situacao), ['pulada', 'pulada']);
+    assert.equal(bia.situacao, 'falha');
+    assert.equal(bia.erro, null, 'erro de etapa fica na etapa');
+    assert.deepEqual(bia.requisicoesComFalha.map((q) => [q.teste, q.etapa]), [['fluxo', 1]]);
+    assert.deepEqual(bia.respostasComErro.map((q) => [q.teste, q.etapa]), [['fluxo', 1]]);
+    assert.deepEqual(cida.testes.map((t) => t.situacao), ['ok', 'ok'], 'o caso seguinte roda a cadeia toda');
+    assert.equal(run.situacao, 'falha');
+    assert.equal(run.restauracao.ok, true);
+    assert.deepEqual(s.device.files, { 'Param.db': 'p0' });
+    assert.deepEqual(s.device.local, { tema: 'escuro' });
+
+    // etapa de um teste da cadeia
+    await assert.rejects(s.api.testStatus({ case: 'Ana', step: '1' }), /Informe o teste.*1\. fluxo, 2\. checkout/);
+    const step = await s.api.testStatus({ case: 'Ana', test: 'checkout', step: '1' });
+    assert.deepEqual(step.logs.map((l) => l.msg), ['checkout de ana']);
+    assert.match(testStep(step), /^Caso 1 \(Ana\) · teste 2 \(checkout\) · etapa 1 \(Carrinho\): ok/);
+    assert.deepEqual((await s.api.testStatus({ case: 'Ana', test: '1', step: '1' })).logs.map((l) => l.msg), ['login de ana']);
+    const text = testsStatus(run);
+    assert.match(text, /Rodada \S+ · fluxo → checkout · FALHA/);
+    assert.match(text, /2\. Bia — FALHA[\s\S]*1\) fluxo — falha[\s\S]*2\) checkout — pulado/);
+    assert.match(text, /requisição com falha: .* \[fluxo, etapa 1\]/);
+
+    // relatório e histórico
+    assert.match(run.relatorio, /-fluxo\+checkout\.json$/);
+    const report = JSON.parse(fs.readFileSync(path.join(s.root, run.relatorio), 'utf8'));
+    assert.deepEqual(report.testes, ['fluxo', 'checkout']);
+    assert.deepEqual(report.casos[0].testes[1].etapas[0].logs.map((l) => l.msg), ['checkout de ana']);
+    assert.equal(fs.readFileSync(path.join(s.root, run.relatorio), 'utf8').includes(SECRET), false);
+    s.server.tests.current = null;
+    s.server.tests.frozen.clear();
+    const fromReport = await s.api.testStatus({ id: run.id, case: '1', test: 'checkout', step: '2' });
+    assert.equal(fromReport.detalhe, 'pedido-fim');
+    assert.deepEqual((await s.api.testRuns({ test: 'checkout' })).rodadas.map((r) => r.testes), [['fluxo', 'checkout']]);
+  } finally {
+    await teardown(s);
+  }
+});
+
+test('requer fora de ordem é recusado antes de mexer no aparelho; relatório antigo vira o formato novo', async () => {
+  const s = await setup([{ nome: 'Ana', usuario: 'ana', senha: 'certa' }]);
+  const dir = path.join(s.root, '.devbridge/tests');
+  fs.writeFileSync(path.join(dir, 'checkout.test.js'), CHECKOUT);
+  fs.writeFileSync(path.join(dir, 'pedido.comum.js'), COMUM);
+  try {
+    const boots = s.device.boots;
+    await s.api.testRun({ test: 'checkout' });
+    const run = await s.api.testStatus({ waitMs: 5000 });
+    assert.equal(run.situacao, 'erro');
+    assert.match(run.erro, /checkout requer fluxo antes dele\. Rode tests_run com tests \["fluxo","checkout"\] \(CLI: devbridge test run fluxo checkout\)/);
+    assert.equal(s.device.boots, boots, 'sem snapshot nem restore');
+    assert.ok(!fs.existsSync(path.join(s.config.stateDir, 'snapshots')));
+
+    // relatório da #28: etapas direto no caso
+    const legacy = {
+      id: '2026-11-01T10-00-00', teste: 'fluxo', nome: 'fluxo', situacao: 'falha', inicio: '2026-11-01T10:00:00-03:00',
+      casos: [{
+        nome: 'Ana', situacao: 'falha', erro: 'x', duracaoMs: 5,
+        etapas: [{ nome: 'Login', situacao: 'falha', erro: 'x', logs: [{ seq: 1, nivel: 'log', msg: 'antigo', ts: '2026-11-01T10:00:00-03:00' }], requisicoes: [] }],
+        antes: { logs: [], requisicoes: [] }, depois: { logs: [], requisicoes: [] },
+        errosNoLog: [{ msg: 'e', etapa: 1 }], requisicoesComFalha: [], respostasComErro: [],
+      }],
+    };
+    fs.writeFileSync(path.join(s.config.stateDir, 'test-runs', `${legacy.id}-fluxo.json`), JSON.stringify(legacy));
+    const old = await s.api.testStatus({ id: legacy.id });
+    assert.deepEqual(old.testes, ['fluxo']);
+    assert.equal(old.casos[0].testes[0].etapas[0].nome, 'Login');
+    assert.equal(old.casos[0].etapas, undefined);
+    assert.equal(old.casos[0].errosNoLog[0].teste, 'fluxo');
+    assert.deepEqual((await s.api.testStatus({ id: legacy.id, case: '1', step: '1' })).logs.map((l) => l.msg), ['antigo']);
+    assert.match(testsStatus(old), /1\. Ana — FALHA \(5 ms\)\n\s+1\. Login\s+falha/);
+  } finally {
+    await teardown(s);
+  }
+});
+
+test('cancelamento no meio da cadeia: o resto do caso e os casos seguintes ficam pulados', async () => {
+  const s = await setup([
+    { nome: 'Preso', usuario: 'ana', senha: 'certa', esperarParaSempre: true },
+    { nome: 'Depois', usuario: 'bia', senha: 'certa' },
+  ]);
+  const dir = path.join(s.root, '.devbridge/tests');
+  fs.writeFileSync(path.join(dir, 'fluxo.test.js'), FLUXO.replace('tempoLimiteMs: 200', 'tempoLimiteMs: 20000'));
+  fs.writeFileSync(path.join(dir, 'checkout.test.js'), CHECKOUT);
+  fs.writeFileSync(path.join(dir, 'pedido.comum.js'), COMUM);
+  try {
+    await s.api.testRun({ tests: ['fluxo', 'checkout'] });
+    await until(async () => {
+      const c = (await s.api.testStatus()).casos[0];
+      return c.testeAtual === 1 && c.etapaAtual === 3;
+    }, 5000);
+    await s.api.testCancel();
+    const run = await s.api.testStatus({ waitMs: 10000 });
+    assert.equal(run.situacao, 'cancelada');
+    const [preso, depois] = run.casos;
+    assert.deepEqual(preso.testes.map((t) => t.situacao), ['cancelada', 'pulado']);
+    assert.equal(preso.situacao, 'cancelada');
+    assert.deepEqual(depois.testes.map((t) => t.situacao), ['pulado', 'pulado']);
+    assert.equal(depois.situacao, 'pulado');
+    assert.equal(run.restauracao.ok, true);
+    assert.deepEqual(s.device.files, { 'Param.db': 'p0' });
+  } finally {
     await teardown(s);
   }
 });
