@@ -8,7 +8,7 @@ const { loadConfig, resolveDatabase, CONFIG_NAME } = require('../src/config');
 const { DevServer, globToRegExp } = require('../src/server');
 const { devBuild, launchIfServerUp } = require('../src/devbuild');
 const { Api } = require('../src/api');
-const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep } = require('../src/format');
+const { sqlResult, sqlBatchResult, logLine, table, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep, testRuns } = require('../src/format');
 const { startMcp } = require('../src/mcp');
 const { splitSql } = require('../src/sqlguard');
 const { createSnapshot, restoreSnapshot, listSnapshots } = require('../src/snapshot');
@@ -59,6 +59,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   test status [ID] [--case N --step N] [--json]
                              tabela caso × etapa; com --case/--step, logs e requisições da etapa
   test cancel                cancela a rodada em andamento
+  test runs [TESTE] [--json] histórico das rodadas (.devbridge/test-runs)
   screenshot [--out arq.png] captura a tela do celular
   mcp                        servidor MCP (stdio) para agentes de IA
 
@@ -253,8 +254,12 @@ async function cmdTest(api, args) {
     }
     case 'cancel':
       return console.log(`Cancelando a rodada ${(await api.testCancel()).id}; acompanhe com devbridge test status.`);
+    case 'runs': {
+      const r = await api.testRuns({ test: args._[2] });
+      return console.log(flags.json ? JSON.stringify(r, null, 2) : testRuns(r));
+    }
     default:
-      throw new Error(`Subcomando desconhecido: test ${sub}. Use list, run, status ou cancel.`);
+      throw new Error(`Subcomando desconhecido: test ${sub}. Use list, run, status, runs ou cancel.`);
   }
 }
 

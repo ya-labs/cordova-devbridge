@@ -10,7 +10,7 @@ const readline = require('node:readline');
 const { loadConfig } = require('../src/config');
 const { DevServer } = require('../src/server');
 const { Api } = require('../src/api');
-const { testsStatus, testStep, testsList } = require('../src/format');
+const { testsStatus, testStep, testsList, testRuns } = require('../src/format');
 const { makeApp, runClient, until, wait } = require('./helpers');
 
 const SECRET = 'SEGREDO-ERRADO';
@@ -187,6 +187,57 @@ test('rodada: casos em sequência, falha, tempo limite, pulada, relatório e apa
     assert.equal(old.doRelatorio, true);
     assert.match(testsStatus(old), /2\. Bia — FALHA/);
     assert.equal(old.casos[1].etapas[0].erro, 'Senha inválida');
+
+    // rodada encerrada com id: vem do relatório, que guarda os logs de cada etapa
+    const fin = await s.api.testStatus({ id: run.id });
+    assert.equal(fin.doRelatorio, true);
+    assert.deepEqual(fin.casos[1].etapas[0].logs.map((l) => l.msg), ['login de bia', 'senha recusada']);
+    assert.equal(fin.casos[1].etapas[0].requisicoes.length, 1);
+    const liveUrl = `http://127.0.0.1:${s.server.port}/__devbridge/api/tests/live`;
+    const live = await (await fetch(liveUrl, { headers: { 'X-Devbridge': '1' } })).json();
+    assert.equal(live.rodada.id, run.id);
+    assert.ok(live.rodada.fim);
+    const t0 = Date.now();
+    const waited = await (await fetch(`${liveUrl}?after=${live.rev - 1}`, { headers: { 'X-Devbridge': '1' } })).json();
+    assert.ok(Date.now() - t0 < 1000, 'after antigo responde na hora');
+    assert.equal(waited.rev, live.rev);
+
+    // histórico: a etapa sai do relatório mesmo sem a rodada na memória do servidor
+    s.server.tests.current = null;
+    s.server.tests.frozen.clear();
+    const fromReport = await s.api.testStatus({ id: run.id, case: '2', step: '1' });
+    assert.deepEqual(fromReport.logs.map((l) => l.msg), ['login de bia', 'senha recusada']);
+    assert.match(fromReport.logs[0].ts, /^\d{4}-.*[+-]\d\d:\d\d$/, 'horário local no relatório');
+    assert.equal(fromReport.requisicoes.length, 1);
+    assert.match(testStep(fromReport), /#\d+ POST 405 .*\/api\/login/);
+    assert.deepEqual((await s.api.testStatus({ id: run.id, case: 'Ana', step: 'depois' })).logs, []);
+    assert.match(testsStatus(await s.api.testStatus({ id: run.id })), new RegExp(`tests_status com id ${run.id}, case e step`));
+    const runs = await s.api.testRuns();
+    assert.deepEqual(runs.testes, ['fluxo']);
+    assert.equal(runs.rodadas.length, 1);
+    const h = runs.rodadas[0];
+    assert.equal(h.id, run.id);
+    assert.equal(h.arquivo, `.devbridge/test-runs/${run.id}-fluxo.json`);
+    assert.deepEqual(h.casos.map((c) => c.situacao), ['ok', 'falha', 'falha']);
+    assert.deepEqual([h.falhas.requisicoes, h.falhas.respostas, h.restaurado], [1, 1, true]);
+    assert.ok(h.falhas.logs >= 1);
+    assert.match(testRuns(runs), /fluxo\s+FALHA\s+1\/3 ok/);
+    assert.equal((await s.api.testRuns({ test: 'outro' })).rodadas.length, 0);
+    assert.match(testsList(await s.api.tests()), new RegExp(`Últimas rodadas[\\s\\S]*${run.id}`));
+    // relatório antigo, sem logs por etapa
+    const file = path.join(s.root, run.relatorio);
+    const legacy = JSON.parse(fs.readFileSync(file, 'utf8'));
+    delete legacy.casos[1].etapas[0].logs;
+    fs.writeFileSync(file, JSON.stringify(legacy));
+    assert.match((await s.api.testStatus({ id: run.id, case: '2', step: '1' })).aviso, /não guardou os logs/);
+    // relatório ilegível entra no histórico sem derrubar a lista
+    fs.writeFileSync(path.join(s.config.stateDir, 'test-runs', '2099-01-01T00-00-00-quebrado.json'), '{');
+    assert.equal((await s.api.testRuns()).rodadas[0].situacao, 'ilegível');
+
+    // tela de testes
+    const page = await fetch(`http://127.0.0.1:${s.server.port}/__devbridge/tests`);
+    assert.equal(page.status, 200);
+    assert.match(await page.text(), /<title>Testes · Devbridge<\/title>/);
   } finally {
     await teardown(s);
   }

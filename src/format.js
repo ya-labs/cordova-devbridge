@@ -205,7 +205,30 @@ function testsList(r) {
   });
   if (!r.app) blocks.push('(app não conectado: etapas lidas da última vez que o app carregou o teste)');
   if (r.rodada) blocks.push(`Rodada ${r.rodada.id}: ${r.rodada.teste} · ${r.rodada.situacao}`);
+  if (r.historico && r.historico.length) blocks.push(`Últimas rodadas (tests_status com id; CLI: test runs):\n${r.historico.map(runLine).join('\n')}`);
   return blocks.join('\n\n');
+}
+
+// "2026-11-09T14:03:05-03:00" -> "09/11 14:03"
+function dayClock(v) {
+  return typeof v === 'string' && v.length >= 16 ? `${v.slice(8, 10)}/${v.slice(5, 7)} ${v.slice(11, 16)}` : '-';
+}
+
+function runLine(r) {
+  const ok = r.casos.filter((c) => c.situacao === 'ok').length;
+  const f = r.falhas || {};
+  const notes = [
+    f.requisicoes ? `${f.requisicoes} req. com falha` : '',
+    f.respostas ? `${f.respostas} resp. com erro` : '',
+    f.logs ? `${f.logs} log(s) de erro` : '',
+    r.restaurado === false ? 'RESTAURAÇÃO FALHOU' : '',
+  ].filter(Boolean).join(' · ');
+  return `${r.id}  ${dayClock(r.inicio)}  ${String(r.teste || '-').padEnd(20)} ${String(r.situacao).toUpperCase().padEnd(9)} ${`${ok}/${r.casos.length} ok`.padEnd(8)} ${duration(r.duracaoMs).padEnd(10)} ${notes}`.trimEnd();
+}
+
+function testRuns(r) {
+  if (!r.rodadas.length) return `Nenhuma rodada em ${r.pasta}/.`;
+  return `${r.rodadas.map(runLine).join('\n')}\n\nDetalhe: test status <ID> (MCP: tests_status com id).`;
 }
 
 function stepLine(e, i, current) {
@@ -239,7 +262,8 @@ function testsStatus(run) {
     out.push('Restaurando o aparelho…');
   }
   if (run.relatorio) out.push(`Relatório: ${run.relatorio}`);
-  if (!run.doRelatorio) out.push('Logs e requisições de uma etapa: tests_status com case e step (CLI: test status --case 1 --step 2); corpo da requisição com app_network_entry (CLI: network <id>).');
+  if (run.doRelatorio) out.push(`Logs e requisições de uma etapa: tests_status com id ${run.id}, case e step (CLI: test status ${run.id} --case 1 --step 2).`);
+  else out.push('Logs e requisições de uma etapa: tests_status com case e step (CLI: test status --case 1 --step 2); corpo da requisição com app_network_entry (CLI: network <id>).');
   return out.join('\n\n');
 }
 
@@ -247,6 +271,7 @@ function testStep(d) {
   const head = [`Caso ${d.casoIndice} (${d.caso}) · etapa ${d.etapaIndice} (${d.etapa}): ${d.situacao}${d.duracaoMs !== null && d.duracaoMs !== undefined ? ` · ${duration(d.duracaoMs)}` : ''}`];
   if (d.erro) head.push(`Erro: ${d.erro}`);
   if (d.detalhe) head.push(`Detalhe: ${d.detalhe}`);
+  if (d.aviso) head.push(d.aviso);
   const logs = d.logs.length ? d.logs.map((l) => `${clock(l.ts)} ${l.nivel.toUpperCase().padEnd(5)} ${l.msg}`).join('\n') : '(nenhum)';
   const reqs = d.requisicoes.length
     ? d.requisicoes.map((q) => `#${q.id} ${q.metodo} ${q.situacao === 'pending' ? 'pendente' : q.status}${q.ms !== undefined && q.ms !== null ? ` ${q.ms} ms` : ''} ${q.url}${q.erro ? ` (${q.erro})` : ''}`).join('\n')
@@ -254,4 +279,4 @@ function testStep(d) {
   return `${head.join('\n')}\n\nLogs (${d.logs.length}):\n${logs}\n\nRequisições (${d.requisicoes.length}; corpo com app_network_entry):\n${reqs}`;
 }
 
-module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep, duration };
+module.exports = { table, sqlResult, sqlBatchResult, logLine, networkLine, networkDetail, evalResult, navigateResult, storageResult, snapshotResult, snapshotList, inputResult, testsList, testsStatus, testStep, testRuns, duration };

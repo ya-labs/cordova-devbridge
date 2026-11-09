@@ -12,6 +12,7 @@ const STEP_LOGS = 200;
 const STEP_REQUESTS = 200;
 const ANALYZE_MAX = 100;
 const ANALYZE_BYTES = 8 * 1024 * 1024;
+const RUNS_MAX = 200;
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -107,6 +108,38 @@ function shortLog(e) {
   return { seq: e.seq, nivel: e.level, msg: e.msg, ts: e.ts };
 }
 
+function reportFiles(config) {
+  const dir = runsDir(config);
+  if (!fs.existsSync(dir)) return [];
+  return fs.readdirSync(dir).filter((f) => f.endsWith('.json') && !f.endsWith('.storage.json')).sort().reverse();
+}
+
+// Logs e requisições de uma etapa no relatório (relatórios antigos não têm).
+function reportStep(c, step) {
+  const src = typeof step === 'number' ? c.etapas[step] : c[step];
+  if (!src || !Array.isArray(src.logs)) return { logs: [], requisicoes: [], aviso: 'Este relatório não guardou os logs e as requisições das etapas.' };
+  return { logs: src.logs, requisicoes: src.requisicoes || [] };
+}
+
+function count(list, fn) {
+  return list.reduce((n, x) => n + (fn(x) ? 1 : 0), 0);
+}
+
+// Resumo de uma rodada para o histórico.
+function runSummary(r, file) {
+  const casos = (r.casos || []).map((c) => ({ nome: c.nome, situacao: c.situacao, duracaoMs: c.duracaoMs }));
+  const all = r.casos || [];
+  return {
+    id: r.id, teste: r.teste, nome: r.nome, situacao: r.situacao, inicio: r.inicio, fim: r.fim, duracaoMs: r.duracaoMs,
+    erro: r.erro, restaurado: r.restauracao ? !!r.restauracao.ok : null, arquivo: `.devbridge/test-runs/${file}`, casos,
+    falhas: {
+      requisicoes: all.reduce((n, c) => n + (c.requisicoesComFalha || []).length, 0),
+      respostas: all.reduce((n, c) => n + count(c.respostasComErro || [], (q) => !q.erro), 0),
+      logs: all.reduce((n, c) => n + (c.errosNoLog || []).length, 0),
+    },
+  };
+}
+
 // Rodada de testes: guarda o estado do aparelho (armazenamento e bancos), roda
 // os casos um a um no app e devolve o aparelho ao estado de antes, mesmo com
 // falha ou cancelamento. Uma rodada por vez.
@@ -196,7 +229,29 @@ class TestRunner {
       }
       testes.push(item);
     }
-    return { pasta: '.devbridge/tests', app: ready, testes, rodada: this.current ? this.summary(this.current) : null };
+    const historico = this.runs({ limit: 5 }).rodadas;
+    return { pasta: '.devbridge/tests', app: ready, testes, rodada: this.current ? this.summary(this.current) : null, historico };
+  }
+
+  // Histórico: relatórios de .devbridge/test-runs/, do mais novo ao mais antigo.
+  runs({ teste = null, limit = 100 } = {}) {
+    const max = Math.min(Math.max(Number(limit) || 100, 1), RUNS_MAX);
+    const rodadas = [];
+    const testes = new Set();
+    for (const file of reportFiles(this.config).slice(0, RUNS_MAX * 2)) {
+      let r;
+      try {
+        r = JSON.parse(fs.readFileSync(path.join(runsDir(this.config), file), 'utf8'));
+      } catch (err) {
+        if (!teste && rodadas.length < max) rodadas.push({ id: file.replace(/\.json$/, ''), arquivo: `.devbridge/test-runs/${file}`, situacao: 'ilegível', erro: err.message, casos: [] });
+        continue;
+      }
+      if (!r || typeof r.id !== 'string') continue;
+      testes.add(r.teste);
+      if (teste && r.teste !== teste) continue;
+      if (rodadas.length < max) rodadas.push(runSummary(r, file));
+    }
+    return { pasta: '.devbridge/test-runs', testes: [...testes].sort(), rodadas };
   }
 
   run({ test, cases } = {}) {
@@ -242,9 +297,15 @@ class TestRunner {
   }
 
   async status({ id, caso, etapa, after, waitMs } = {}) {
-    if (id && (!this.current || this.current.id !== id)) return this.readReport(id);
-    if (!this.current) throw new Error('Nenhuma rodada nesta sessão do devbridge start. Inicie com tests_run.');
-    if (caso !== undefined && caso !== null && caso !== '') return this.stepDetail(caso, etapa);
+    const wantStep = caso !== undefined && caso !== null && caso !== '';
+    // Rodada encerrada com relatório gravado: o relatório tem também os logs das etapas.
+    const finished = this.current && this.current.id === id && this.current.fim && this.current.relatorio;
+    if (id && (!this.current || this.current.id !== id || finished)) {
+      const report = this.readReport(id);
+      return wantStep ? this.stepDetail(report, caso, etapa) : report;
+    }
+    if (!this.current) throw new Error('Nenhuma rodada nesta sessão do devbridge start. Inicie com tests_run ou veja as anteriores no tests_list.');
+    if (wantStep) return this.stepDetail(this.current, caso, etapa);
     const wait = Math.min(Math.max(Number(waitMs) || 0, 0), 120000);
     if (after !== undefined && after !== null && after !== '') {
       await this.waitChange(Number(after), Math.min(wait || 25000, 25000));
@@ -255,6 +316,12 @@ class TestRunner {
     return this.summary(this.current);
   }
 
+  // Tela de testes: long-poll que também avisa de rodada iniciada pelo MCP ou pela CLI.
+  async live(after) {
+    if (after !== undefined && after !== null && after !== '') await this.waitChange(Number(after), 25000);
+    return { rev: this.rev, rodada: this.current ? this.summary(this.current) : null };
+  }
+
   summary(run) {
     const { cancelamento, meta, ...out } = run;
     return { ...out, cancelando: cancelamento && !run.fim, rev: this.rev };
@@ -262,15 +329,23 @@ class TestRunner {
 
   readReport(id) {
     if (!SAFE.test(id)) throw new Error('Id de rodada inválido.');
-    const dir = runsDir(this.config);
-    const file = fs.existsSync(dir) && fs.readdirSync(dir).find((f) => f.startsWith(`${id}-`) && f.endsWith('.json') && !f.endsWith('.storage.json'));
-    if (!file) throw new Error(`Rodada "${id}" não encontrada em .devbridge/test-runs/.`);
-    return { ...JSON.parse(fs.readFileSync(path.join(dir, file), 'utf8')), doRelatorio: true };
+    // O nome é <id>-<teste>.json; o id de dentro desempata ids com sufixo (…-ab12).
+    for (const f of reportFiles(this.config)) {
+      if (!f.startsWith(`${id}-`)) continue;
+      let r;
+      try {
+        r = JSON.parse(fs.readFileSync(path.join(runsDir(this.config), f), 'utf8'));
+      } catch (err) {
+        continue;
+      }
+      if (r && r.id === id) return { ...r, arquivo: `.devbridge/test-runs/${f}`, doRelatorio: true };
+    }
+    throw new Error(`Rodada "${id}" não encontrada em .devbridge/test-runs/.`);
   }
 
   // caso: índice (1, 2…) ou nome; etapa: índice (1, 2…), nome, "antes" ou "depois".
-  stepDetail(caso, etapa) {
-    const run = this.current;
+  // run: a rodada atual ou um relatório lido do disco.
+  stepDetail(run, caso, etapa) {
     let ci = run.casos.findIndex((c) => c.nome === caso);
     if (ci < 0 && /^\d+$/.test(String(caso))) ci = Number(caso) - 1;
     const c = run.casos[ci];
@@ -284,7 +359,7 @@ class TestRunner {
       if (!c.etapas[step]) throw new Error(`Etapa "${etapa}" não existe. Etapas: ${c.etapas.map((e, i) => `${i + 1}. ${e.nome}`).join(', ')}`);
     }
     const tag = `${run.id}/${ci}/${step}`;
-    const data = this.frozen.get(tag) || this.collectStep(tag);
+    const data = run.doRelatorio ? reportStep(c, step) : this.frozen.get(tag) || this.collectStep(tag);
     const e = typeof step === 'number' ? c.etapas[step] : { nome: step, situacao: c.situacao, erro: null, detalhe: '', duracaoMs: null };
     return {
       rodada: run.id, caso: c.nome, casoIndice: ci + 1, etapa: e.nome, etapaIndice: typeof step === 'number' ? step + 1 : step,
@@ -525,13 +600,22 @@ class TestRunner {
     const report = {
       id: run.id, teste: run.teste, nome: run.nome, descricao: run.descricao, situacao: run.situacao,
       inicio: t(run.inicio), fim: t(run.fim), duracaoMs: run.fim - run.inicio, erro: run.erro, restauracao: run.restauracao,
-      casos: run.casos.map((c) => ({
-        ...c,
-        inicio: t(c.inicio),
-        fim: t(c.fim),
-        etapas: c.etapas.map((e) => ({ ...e, inicio: t(e.inicio), fim: t(e.fim) })),
-        errosNoLog: c.errosNoLog.map((e) => ({ ...e, ts: t(e.ts) })),
-      })),
+      // Logs e resumo das requisições (sem corpo) de cada etapa, para o histórico.
+      casos: run.casos.map((c, ci) => {
+        const step = (k) => {
+          const d = this.frozen.get(`${run.id}/${ci}/${k}`) || { logs: [], requisicoes: [] };
+          return { logs: d.logs.map((l) => ({ ...l, ts: t(l.ts) })), requisicoes: d.requisicoes };
+        };
+        return {
+          ...c,
+          inicio: t(c.inicio),
+          fim: t(c.fim),
+          etapas: c.etapas.map((e, k) => ({ ...e, inicio: t(e.inicio), fim: t(e.fim), ...step(k) })),
+          antes: step('antes'),
+          depois: step('depois'),
+          errosNoLog: c.errosNoLog.map((e) => ({ ...e, ts: t(e.ts) })),
+        };
+      }),
     };
     await fsp.mkdir(runsDir(this.config), { recursive: true });
     const file = path.join(runsDir(this.config), `${run.id}-${run.teste}.json`);

@@ -136,6 +136,7 @@ devbridge db-snapshots
 devbridge test list                                # testes do app em .devbridge/tests
 devbridge test run login --case "Homologação A"   # roda e restaura o aparelho no fim
 devbridge test status --case 1 --step 1            # logs e requisições de uma etapa
+devbridge test runs                                # histórico das rodadas gravadas
 devbridge screenshot
 ```
 
@@ -150,7 +151,7 @@ Ctrl+Enter executa o SQL.
 
 **Storage:** a aba "Storage" lista as chaves de `localStorage`, `sessionStorage` ou NativeStorage, com tamanho e prévia; clique numa chave para ver o valor (JSON vira árvore). Ela é só leitura e lê ao abrir a aba ou em "Atualizar"; gravar e apagar ficam no MCP e na CLI. Chaves `devbridge.*` são do próprio devbridge (`reloadRestore`) e não podem ser alteradas.
 
-**Testes:** a aba "Testes" escolhe o teste e os casos, roda e mostra a tabela caso × etapa ao vivo (situação, etapa atual, duração, erro). Clique numa célula para ver os logs e as requisições daquela etapa.
+**Testes:** o botão "Testes" do console abre uma tela própria (`/__devbridge/tests`). À esquerda fica o histórico das rodadas gravadas em `.devbridge/test-runs/`, agrupado por dia e filtrável por teste; a rodada em andamento aparece no topo, inclusive se foi iniciada pelo MCP ou pela CLI. Cada rodada tem indicadores (casos ok, etapas com falha, requisições com falha, logs de erro) e abas: Resumo (tabela caso × etapa), Casos (linha do tempo das etapas, com os logs e as requisições de cada uma), Problemas, Logs, Requisições (com filtros) e JSON (o relatório, para copiar ou baixar). "Nova rodada" escolhe o teste e os casos.
 
 **Rota:** clique no caminho do app no indicador de status (topo) para editar a rota; Enter leva o app até ela.
 

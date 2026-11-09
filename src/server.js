@@ -372,6 +372,7 @@ class DevServer {
     if (p === '/__devbridge/events') return this.openEvents(req, res, url);
     if (p === '/__devbridge' || p === '/__devbridge/') return this.sendFile(res, path.join(UI_DIR, 'index.html'));
     if (p === '/__devbridge/mirror') return this.sendFile(res, path.join(UI_DIR, 'mirror.html'));
+    if (p === '/__devbridge/tests') return this.sendFile(res, path.join(UI_DIR, 'tests.html'));
     if (req.method === 'POST' && p === '/__devbridge/log') {
       const body = await readJson(req);
       this.addLogs(body.client, body.entries);
@@ -456,6 +457,10 @@ class DevServer {
           return this.json(res, 200, await this.evaluate(await readJson(req)));
         case 'GET /tests':
           return this.json(res, 200, await this.tests.list());
+        case 'GET /tests/live':
+          return this.json(res, 200, await this.tests.live(q.get('after')));
+        case 'GET /tests/runs':
+          return this.json(res, 200, this.tests.runs({ teste: q.get('test'), limit: q.get('limit') }));
         case 'POST /tests/run':
           return this.json(res, 200, this.tests.run(await readJson(req)));
         case 'POST /tests/cancel':

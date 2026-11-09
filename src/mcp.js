@@ -189,7 +189,7 @@ function buildTools(config) {
     },
     {
       name: 'tests_list',
-      description: 'Lista os testes automatizados do app (.devbridge/tests/<nome>.test.js): etapas, tempo limite de cada uma e casos disponíveis (do <nome>.local.json ou casos.local.json, só os nomes).',
+      description: 'Lista os testes automatizados do app (.devbridge/tests/<nome>.test.js): etapas, tempo limite de cada uma e casos disponíveis (do <nome>.local.json ou casos.local.json, só os nomes), e as últimas rodadas gravadas em .devbridge/test-runs/ (id para o tests_status).',
       inputSchema: { type: 'object', properties: {} },
     },
     {
@@ -210,7 +210,7 @@ function buildTools(config) {
       inputSchema: {
         type: 'object',
         properties: {
-          id: { type: 'string', description: 'Rodada anterior (lê o relatório em .devbridge/test-runs/). Padrão: a atual.' },
+          id: { type: 'string', description: 'Rodada anterior (lê o relatório em .devbridge/test-runs/, que guarda também os logs e as requisições de cada etapa). Padrão: a atual.' },
           case: { type: 'string', description: 'Caso: número (1, 2…) ou nome.' },
           step: { type: 'string', description: 'Etapa: número (1, 2…), nome, "antes" ou "depois". Exige case.' },
           waitMs: { type: 'number', description: 'Espera até a rodada terminar, no máximo este tempo (até 120000).' },
