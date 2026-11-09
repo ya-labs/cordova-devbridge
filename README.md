@@ -131,7 +131,7 @@ devbridge eval "location.hash"                     # JavaScript no app
 devbridge eval "angular.element(document.body).injector().get('PedidoService').carrinho"
 devbridge pull-db --db user                        # copia o .db para .devbridge/db/ (DB Browser, sqlite3)
 devbridge db-snapshot antes-do-pedido              # salva os bancos do app (fecha e reabre o app)
-devbridge db-restore antes-do-pedido               # volta os bancos a esse ponto
+devbridge db-restore antes-do-pedido               # deixa databases/ igual ao snapshot (apaga bancos criados depois)
 devbridge db-snapshots
 devbridge screenshot
 ```

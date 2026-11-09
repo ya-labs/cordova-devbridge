@@ -62,6 +62,72 @@ test('snapshot e restore: app parado durante a cópia, WAL de depois apagado, da
   }
 });
 
+test('restore completo apaga o banco criado depois do snapshot (login de usuário novo)', async () => {
+  const root = makeApp();
+  const config = loadConfig({ cwd: root });
+  const dev = fakeDevice({ 'User_ana.db': 'u1', 'Param.db': 'p1' });
+  try {
+    await createSnapshot(config, { name: 'limpo' }, dev.deps);
+    // login de outro usuário: banco próprio, journal dele e parâmetro alterado
+    dev.files['User_bia.db'] = 'dados-bia';
+    dev.files['User_bia.db-journal'] = 'jb';
+    dev.files['Param.db'] = 'p2';
+    dev.ops.length = 0;
+
+    const r = await restoreSnapshot(config, { name: 'limpo' }, dev.deps);
+    assert.deepEqual(r.removed, ['User_bia.db', 'User_bia.db-journal']);
+    assert.deepEqual(dev.files, { 'User_ana.db': 'u1', 'Param.db': 'p1' });
+    assert.ok(dev.ops.indexOf('rm User_bia.db') < dev.ops.indexOf('write User_ana.db'), 'remove antes de gravar');
+    assert.equal(dev.ops[0], 'stop');
+    assert.equal(dev.ops[dev.ops.length - 1], 'open');
+    assert.match(snapshotResult(r), /Apagados \(não estavam no snapshot\): User_bia\.db, User_bia\.db-journal/);
+    const hist = fs.readFileSync(path.join(config.stateDir, 'snapshot-history.log'), 'utf8').trim().split('\n');
+    assert.match(hist[hist.length - 1], /\trestore\tlimpo\tok .* removidos=User_bia\.db,User_bia\.db-journal$/);
+
+    // manifest antigo, sem o campo db, vale como completo
+    const mf = path.join(config.stateDir, 'snapshots/limpo/manifest.json');
+    const m = JSON.parse(fs.readFileSync(mf, 'utf8'));
+    delete m.db;
+    fs.writeFileSync(mf, JSON.stringify(m));
+    dev.files['Outro.db'] = 'x';
+    const old = await restoreSnapshot(config, { name: 'limpo' }, dev.deps);
+    assert.deepEqual(old.removed, ['Outro.db']);
+    assert.deepEqual(dev.files, { 'User_ana.db': 'u1', 'Param.db': 'p1' });
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('restore de um alias só remove arquivos daquele alias', async () => {
+  const root = makeApp();
+  const config = loadConfig({ cwd: root });
+  const dev = fakeDevice({ 'User_ana.db': 'u1', 'Param.db': 'p1' });
+  try {
+    await createSnapshot(config, { name: 'so-user', db: 'user' }, dev.deps);
+    dev.files['User_bia.db'] = 'dados-bia';
+    dev.files['User_bia.db-journal'] = 'jb';
+    dev.files['User_ana.db-wal'] = 'w';
+    dev.files['User_ana.db'] = 'u2';
+    dev.files['Param.db'] = 'p2';
+    dev.files['Param.db-wal'] = 'pw';
+    dev.files['Cache.db'] = 'c';
+
+    const r = await restoreSnapshot(config, { name: 'so-user' }, dev.deps);
+    assert.deepEqual(r.removed.sort(), ['User_ana.db-wal', 'User_bia.db', 'User_bia.db-journal']);
+    assert.deepEqual(dev.files, { 'User_ana.db': 'u1', 'Param.db': 'p2', 'Param.db-wal': 'pw', 'Cache.db': 'c' });
+
+    // alias que saiu da config: só os bancos do manifest e os companheiros deles
+    const semAlias = { ...config, databases: {} };
+    dev.files['User_ana.db-shm'] = 's';
+    dev.files['User_bia.db'] = 'dados-bia';
+    const r2 = await restoreSnapshot(semAlias, { name: 'so-user' }, dev.deps);
+    assert.deepEqual(r2.removed, ['User_ana.db-shm']);
+    assert.equal(dev.files['User_bia.db'], 'dados-bia');
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('snapshot de um banco só (alias com *), nome inválido, outro pacote e lista', async () => {
   const root = makeApp();
   const config = loadConfig({ cwd: root });

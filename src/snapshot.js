@@ -24,13 +24,17 @@ function snapshotDir(config, name) {
 
 // Arquivos de banco do snapshot: todos de databases/, ou só os do alias pedido
 // (com * resolvido no aparelho), sempre com journal/wal/shm junto.
-function pickFiles(config, all, db) {
-  const safe = all.filter((f) => SAFE_NAME.test(f));
-  if (!db) return safe;
+function aliasRegExp(config, db) {
   const spec = config.databases[db] || (/\.db$/i.test(db) || db.includes('*') ? { name: db } : null);
   if (!spec) throw new Error(`Banco "${db}" não existe na config. Disponíveis: ${Object.keys(config.databases).join(', ') || '(nenhum)'}`);
   if (!spec.name) throw new Error(`Banco "${db}" não tem "name" na config; o snapshot precisa do nome do arquivo.`);
-  const re = globToRegExp(spec.name);
+  return globToRegExp(spec.name);
+}
+
+function pickFiles(config, all, db) {
+  const safe = all.filter((f) => SAFE_NAME.test(f));
+  if (!db) return safe;
+  const re = aliasRegExp(config, db);
   const mains = safe.filter((f) => re.test(f) && !COMPANION.test(f));
   return safe.filter((f) => mains.some((m) => f === m || f.startsWith(m + '-')));
 }
@@ -72,8 +76,25 @@ function readManifest(config, name) {
   return JSON.parse(fs.readFileSync(file, 'utf8'));
 }
 
-// Troca o conjunto inteiro: journal/wal/shm que não estavam no snapshot são
-// apagados, senão o SQLite aplicaria um WAL de outro estado sobre o banco restaurado.
+// Arquivos do aparelho que o restore controla: toda a pasta no snapshot completo
+// (manifest sem "db", inclusive os antigos); no snapshot de um alias, os que casam
+// com o nome dele e os companheiros dos bancos do manifest. Um alias que saiu da
+// config fica só com os bancos do manifest.
+function restoreScope(config, manifest, current) {
+  const safe = current.filter((f) => SAFE_NAME.test(f));
+  if (!manifest.db) return safe;
+  const mains = manifest.files.map((f) => f.name).filter((f) => !COMPANION.test(f));
+  let re = null;
+  try { re = aliasRegExp(config, manifest.db); } catch { re = null; }
+  return safe.filter((f) => {
+    const base = f.replace(COMPANION, '');
+    return mains.includes(base) || (re && re.test(base));
+  });
+}
+
+// Deixa a pasta igual ao snapshot: apaga o que ele não tem (banco criado depois,
+// como o de um usuário que logou, e journal/wal/shm de outro estado, que o SQLite
+// aplicaria sobre o banco restaurado) e só então grava os arquivos dele.
 async function restoreSnapshot(config, { name } = {}, deps) {
   const manifest = readManifest(config, name);
   if (manifest.package !== config.package) {
@@ -81,11 +102,10 @@ async function restoreSnapshot(config, { name } = {}, deps) {
   }
   const dir = snapshotDir(config, name);
   const keep = new Set(manifest.files.map((f) => f.name));
-  const mains = manifest.files.map((f) => f.name).filter((f) => !COMPANION.test(f));
   await deps.forceStop(config.package);
   try {
     const current = await deps.listDatabases(config.package);
-    const removed = current.filter((f) => !keep.has(f) && mains.some((m) => f.startsWith(m + '-')));
+    const removed = restoreScope(config, manifest, current).filter((f) => !keep.has(f));
     for (const f of removed) await deps.removeAppFile(config.package, `databases/${f}`);
     for (const f of manifest.files) await deps.writeAppFile(config.package, `databases/${f.name}`, fs.readFileSync(path.join(dir, f.name)));
     history(config, 'restore', name, `ok ${manifest.files.map((f) => f.name).join(',')}${removed.length ? ` removidos=${removed.join(',')}` : ''}`);
