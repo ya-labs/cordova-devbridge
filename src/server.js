@@ -467,7 +467,7 @@ class DevServer {
           return this.json(res, 200, this.tests.cancel());
         case 'GET /tests/status':
           return this.json(res, 200, await this.tests.status({
-            id: q.get('id'), caso: q.get('case'), etapa: q.get('step'), after: q.get('after'), waitMs: q.get('wait'),
+            id: q.get('id'), caso: q.get('case'), teste: q.get('test'), etapa: q.get('step'), after: q.get('after'), waitMs: q.get('wait'),
           }));
         case 'GET /tables':
           return this.json(res, 200, await this.tables(q.get('db')));

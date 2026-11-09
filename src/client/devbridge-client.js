@@ -816,12 +816,15 @@
   // Executor dos arquivos .devbridge/tests/*.test.js. O servidor manda o fonte
   // (eval com sourceURL, fora do eval-history) e o caso, que fica só aqui: do
   // caso, só o nome sai do app. Logs e requisições de uma etapa levam a marca
-  // "rodada/caso/etapa" (testTag), usada pelo servidor para mostrar a etapa.
+  // "rodada/caso/teste/etapa" (testTag), usada pelo servidor para mostrar a etapa.
+  // Os *.comum.js rodam antes dos testes e publicam funções com compartilhar().
   var TEST_BODY_LIMIT = 262144;
   var STEP_LIMIT = 60000;
   var testTag = null;
   var testDefs = {}; // arquivo -> { def, hash }
+  var comumHashes = {}; // arquivo .comum.js -> hash já avaliado
   var testRun = null;
+  var caseShared = null; // dados e publico dos testes de um mesmo caso
   var loadingTest = null;
 
   function errMsg(e) {
@@ -832,7 +835,15 @@
 
   function ensureRunner() {
     if (window.__devbridgeRunner) return;
-    window.__devbridgeRunner = {
+    var runner = window.__devbridgeRunner = {
+      comum: {},
+      compartilhar: function (funcoes) {
+        if (!funcoes || typeof funcoes !== 'object') throw new Error('__devbridgeRunner.compartilhar espera um objeto, ex.: compartilhar({ esperarBoot: function (ctx) {…} }).');
+        for (var k in funcoes) {
+          if (Object.prototype.hasOwnProperty.call(funcoes, k)) runner.comum[k] = funcoes[k];
+        }
+        return runner.comum;
+      },
       registrar: function (teste) {
         if (!loadingTest) throw new Error('__devbridgeRunner.registrar só vale num arquivo de .devbridge/tests carregado pelo devbridge.');
         if (!teste || !teste.nome) throw new Error('Teste sem nome.');
@@ -849,15 +860,29 @@
       arquivo: file,
       nome: String(def.nome),
       descricao: def.descricao ? String(def.descricao) : '',
+      requer: [].concat(def.requer || []).map(String),
       etapas: def.etapas.map(function (e) { return { nome: String(e.nome), tempoLimiteMs: e.tempoLimiteMs || STEP_LIMIT }; }),
       analisaRespostas: typeof def.analisarResposta === 'function',
     };
   }
 
+  function loadComum(list) {
+    (list || []).forEach(function (c) {
+      if (comumHashes[c.file] === c.hash) return;
+      try {
+        (0, eval)(c.source + '\n//# sourceURL=devbridge-tests/' + c.file + '.comum.js');
+      } catch (e) {
+        throw new Error(c.file + '.comum.js: ' + errMsg(e));
+      }
+      comumHashes[c.file] = c.hash;
+    });
+  }
+
   function loadTest(req) {
+    ensureRunner();
+    loadComum(req.comum);
     var cur = testDefs[req.file];
     if (cur && cur.hash === req.hash) return testMeta(req.file, cur.def);
-    ensureRunner();
     loadingTest = { file: req.file, def: null };
     var got;
     try {
@@ -955,8 +980,9 @@
     var falhou = false;
     var ctx = {
       caso: caso,
-      dados: {},
+      dados: r.dados,
       publico: r.publico,
+      comum: window.__devbridgeRunner.comum,
       esperar: esperar,
       dormir: dormir,
       servico: servico,
@@ -969,7 +995,7 @@
         if (r.atual !== null) r.etapas[r.atual].detalhe = String(descricao);
       },
     };
-    function tag(step) { testTag = r.run + '/' + r.caso + '/' + step; }
+    function tag(step) { testTag = r.run + '/' + r.caso + '/' + r.teste + '/' + step; }
     function finish() {
       tag('depois');
       callHook(def.depois, ctx).then(null, function (e) {
@@ -1025,7 +1051,7 @@
     var tela = '';
     try { tela = estadoAtual(); } catch (e) { tela = ''; }
     return {
-      run: r.run, caso: r.caso, situacao: r.situacao, inicio: r.inicio, fim: r.fim, erro: r.erro,
+      run: r.run, caso: r.caso, teste: r.teste, situacao: r.situacao, inicio: r.inicio, fim: r.fim, erro: r.erro,
       atual: r.atual, telaAtual: tela, etapas: JSON.parse(JSON.stringify(r.etapas)), dados: cloneArg(r.publico, [], { n: 0 }, 0),
     };
   }
@@ -1034,9 +1060,13 @@
     var t = testDefs[req.file];
     if (!t) throw new Error('Teste não carregado no app: ' + req.file);
     if (testRun && !testRun.fim) throw new Error('Já existe um caso rodando no app.');
+    // Testes seguintes do mesmo caso continuam com os mesmos ctx.dados e ctx.publico.
+    if (!caseShared || caseShared.run !== req.run || caseShared.caso !== req.caso) {
+      caseShared = { run: req.run, caso: req.caso, dados: {}, publico: {} };
+    }
     testRun = {
-      run: req.run, caso: req.caso, situacao: 'rodando', inicio: Date.now(), fim: null, erro: null,
-      cancelada: false, atual: null, publico: {},
+      run: req.run, caso: req.caso, teste: req.teste || 0, situacao: 'rodando', inicio: Date.now(), fim: null, erro: null,
+      cancelada: false, atual: null, dados: caseShared.dados, publico: caseShared.publico,
       etapas: t.def.etapas.map(function (e) {
         return { nome: String(e.nome), situacao: 'aguardando', inicio: null, fim: null, duracaoMs: null, detalhe: '', erro: null };
       }),

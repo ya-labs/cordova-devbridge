@@ -189,30 +189,31 @@ function buildTools(config) {
     },
     {
       name: 'tests_list',
-      description: 'Lista os testes automatizados do app (.devbridge/tests/<nome>.test.js): etapas, tempo limite de cada uma e casos disponíveis (do <nome>.local.json ou casos.local.json, só os nomes), e as últimas rodadas gravadas em .devbridge/test-runs/ (id para o tests_status).',
+      description: 'Lista os testes automatizados do app (.devbridge/tests/<nome>.test.js): etapas, tempo limite de cada uma, testes que cada um requer antes dele, casos disponíveis (do <nome>.local.json ou casos.local.json, só os nomes), o código comum (*.comum.js) e as últimas rodadas gravadas em .devbridge/test-runs/ (id para o tests_status).',
       inputSchema: { type: 'object', properties: {} },
     },
     {
       name: 'tests_run',
-      description: 'Inicia uma rodada de um teste do app e devolve o id. Antes, guarda localStorage, NativeStorage e os bancos (snapshot); roda os casos um a um no app (as etapas chamam funções reais das telas) e no fim devolve o aparelho ao estado de antes, inclusive se falhar ou for cancelada. Fecha e reabre o app. Só uma rodada por vez; acompanhe com tests_status.',
+      description: 'Inicia uma rodada e devolve o id. Antes, guarda localStorage, NativeStorage e os bancos (snapshot); roda os casos um a um no app (as etapas chamam funções reais das telas) e no fim devolve o aparelho ao estado de antes, inclusive se falhar ou for cancelada. Com tests (lista em ordem), cada caso roda os testes em sequência sem restaurar entre eles, e o teste seguinte começa no estado deixado pelo anterior (ex.: login e depois checkout); se um falha, os seguintes daquele caso ficam pulados. Os casos são os do primeiro teste. Fecha e reabre o app. Só uma rodada por vez; acompanhe com tests_status.',
       inputSchema: {
         type: 'object',
         properties: {
-          test: { type: 'string', description: 'Nome do teste (arquivo sem .test.js), como no tests_list.' },
+          test: { type: 'string', description: 'Nome do teste (arquivo sem .test.js), como no tests_list. Para vários, use tests.' },
+          tests: { type: 'array', items: { type: 'string' }, description: 'Testes em ordem, rodados em sequência em cada caso (o que um teste requer vem antes dele).' },
           cases: { type: 'array', items: { type: 'string' }, description: 'Nomes dos casos; padrão: todos.' },
         },
-        required: ['test'],
       },
     },
     {
       name: 'tests_status',
-      description: 'Tabela caso × etapa da rodada (situação, etapa atual, duração, erro), com logs de erro, requisições com falha e respostas com erro de cada caso. Com case e step, mostra os logs e as requisições daquela etapa (corpo com app_network_entry). waitMs espera a rodada terminar.',
+      description: 'Tabela caso × etapa da rodada (situação, etapa atual, duração, erro), com logs de erro, requisições com falha e respostas com erro de cada caso. Com case e step (e test, se a rodada tiver mais de um teste), mostra os logs e as requisições daquela etapa (corpo com app_network_entry). waitMs espera a rodada terminar.',
       inputSchema: {
         type: 'object',
         properties: {
           id: { type: 'string', description: 'Rodada anterior (lê o relatório em .devbridge/test-runs/, que guarda também os logs e as requisições de cada etapa). Padrão: a atual.' },
           case: { type: 'string', description: 'Caso: número (1, 2…) ou nome.' },
-          step: { type: 'string', description: 'Etapa: número (1, 2…), nome, "antes" ou "depois". Exige case.' },
+          test: { type: 'string', description: 'Teste da rodada: número (1, 2…) ou nome. Obrigatório com step quando a rodada tem mais de um teste.' },
+          step: { type: 'string', description: 'Etapa do teste: número (1, 2…), nome, "antes" ou "depois". Exige case.' },
           waitMs: { type: 'number', description: 'Espera até a rodada terminar, no máximo este tempo (até 120000).' },
         },
       },
@@ -285,12 +286,12 @@ async function callTool(api, name, args) {
     case 'tests_list':
       return text(testsList(await api.tests()));
     case 'tests_run': {
-      const run = await api.testRun({ test: args.test, cases: args.cases });
+      const run = await api.testRun({ test: args.test, tests: args.tests, cases: args.cases });
       return text(`Rodada ${run.id} iniciada (${run.casos.length} caso(s)). Acompanhe com tests_status (waitMs espera o fim).\n\n${testsStatus(run)}`);
     }
     case 'tests_status': {
       if (args.step !== undefined && args.case === undefined) throw new Error('Informe também o case.');
-      const r = await api.testStatus({ id: args.id, case: args.case, step: args.step, waitMs: args.waitMs });
+      const r = await api.testStatus({ id: args.id, case: args.case, test: args.test, step: args.step, waitMs: args.waitMs });
       return text(r.etapaIndice !== undefined ? testStep(r) : testsStatus(r));
     }
     case 'tests_cancel':

@@ -53,11 +53,13 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
   db-restore <NOME>          deixa os bancos iguais ao snapshot, apagando os criados depois (fecha e reabre o app)
   db-snapshots               lista os snapshots
   test list                  testes do app em .devbridge/tests (etapas e casos)
-  test run <TESTE> [--case NOME]…
-                             roda o teste no app, um caso por vez, e restaura o aparelho
-                             no fim (Ctrl+C cancela e restaura)
-  test status [ID] [--case N --step N] [--json]
-                             tabela caso × etapa; com --case/--step, logs e requisições da etapa
+  test run <TESTE> [<TESTE>…] [--case NOME]…
+                             roda os testes no app, um caso por vez; com vários, cada caso
+                             roda todos em sequência, sem restaurar entre eles; restaura o
+                             aparelho no fim (Ctrl+C cancela e restaura)
+  test status [ID] [--case N [--test N] --step N] [--json]
+                             tabela caso × teste × etapa; com --case/--step, logs e requisições
+                             da etapa (--test quando a rodada tem mais de um teste)
   test cancel                cancela a rodada em andamento
   test runs [TESTE] [--json] histórico das rodadas (.devbridge/test-runs)
   screenshot [--out arq.png] captura a tela do celular
@@ -65,7 +67,7 @@ Uso: devbridge <comando> [opções]   (rodar na raiz do app, onde está ${CONFIG
 
 Opções globais: --config <arquivo>`;
 
-const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set', '--ms', '--case', '--step']);
+const VALUE_FLAGS = new Set(['--db', '--level', '--since', '--params', '--max', '--out', '--config', '--url', '--timeout', '--file', '--set', '--ms', '--case', '--step', '--test']);
 const REPEATED_FLAGS = new Set(['case']);
 
 function parseArgs(argv) {
@@ -214,13 +216,20 @@ async function followRun(api, run) {
         seen.set(key, true);
         console.log(`\n${ci + 1}. ${c.nome}`);
       }
-      c.etapas.forEach((e, i) => {
-        if (e.situacao === 'aguardando') return;
-        const line = `${e.situacao}|${e.detalhe || ''}|${e.erro || ''}`;
-        if (seen.get(`${ci}/${i}`) === line) return;
-        seen.set(`${ci}/${i}`, line);
-        const extra = e.erro ? ` — ${e.erro}` : e.detalhe ? ` — ${e.detalhe}` : '';
-        console.log(`   ${e.nome}: ${e.situacao}${extra}`);
+      c.testes.forEach((t, ti) => {
+        const many = c.testes.length > 1;
+        if (many && t.situacao !== 'aguardando' && seen.get(`${ci}:${ti}`) !== t.situacao) {
+          seen.set(`${ci}:${ti}`, t.situacao);
+          console.log(`  [${t.teste}] ${t.situacao}${t.erro && t.situacao !== 'rodando' ? ` — ${t.erro}` : ''}`);
+        }
+        t.etapas.forEach((e, i) => {
+          if (e.situacao === 'aguardando') return;
+          const line = `${e.situacao}|${e.detalhe || ''}|${e.erro || ''}`;
+          if (seen.get(`${ci}/${ti}/${i}`) === line) return;
+          seen.set(`${ci}/${ti}/${i}`, line);
+          const extra = e.erro ? ` — ${e.erro}` : e.detalhe ? ` — ${e.detalhe}` : '';
+          console.log(`${many ? '     ' : '   '}${e.nome}: ${e.situacao}${extra}`);
+        });
       });
     });
     if (run.fim) break;
@@ -239,16 +248,16 @@ async function cmdTest(api, args) {
     case undefined:
       return console.log(testsList(await api.tests()));
     case 'run': {
-      if (!args._[2]) throw new Error('Informe o teste: devbridge test run <nome> (veja devbridge test list).');
-      const run = await api.testRun({ test: args._[2], cases: flags.case === undefined ? undefined : [].concat(flags.case) });
-      console.log(`Rodada ${run.id}: ${run.teste}, ${run.casos.length} caso(s).`);
+      if (!args._[2]) throw new Error('Informe o teste: devbridge test run <nome> [<nome>…] (veja devbridge test list).');
+      const run = await api.testRun({ tests: args._.slice(2), cases: flags.case === undefined ? undefined : [].concat(flags.case) });
+      console.log(`Rodada ${run.id}: ${run.testes.join(' → ')}, ${run.casos.length} caso(s).`);
       const end = await followRun(api, run);
       process.exitCode = end.situacao === 'ok' && end.restauracao && end.restauracao.ok ? 0 : 1;
       return;
     }
     case 'status': {
       if (flags.step !== undefined && flags.case === undefined) throw new Error('--step exige --case.');
-      const r = await api.testStatus({ id: args._[2], case: flags.case, step: flags.step });
+      const r = await api.testStatus({ id: args._[2], case: flags.case, test: flags.test, step: flags.step });
       if (flags.json) return console.log(JSON.stringify(r, null, 2));
       return console.log(r.etapaIndice !== undefined ? testStep(r) : testsStatus(r));
     }
