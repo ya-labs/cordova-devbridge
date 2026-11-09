@@ -179,17 +179,17 @@ Para testar: entre numa tela interna, salve um `.js` e confira `dvb status` (o `
 
 ## 6. Console web
 
-Abra `http://localhost:8100/__devbridge/` no navegador do PC:
-- lista de tabelas, grade, SQL com Ctrl+Enter e histórico;
-- logs do app ao vivo;
-- aba "Rede": as requisições do app ao backend; clique numa linha para ver cabeçalhos e corpos. "Só falhas" filtra status >= 400 e erros de rede; "Locais" inclui templates e scripts do próprio servidor;
-- aba "Storage": chaves e valores de `localStorage`, `sessionStorage` e NativeStorage (só leitura; gravar e apagar pelo `dvb storage` ou pelo `app_storage`);
-- botão "Testes": abre a tela de testes (`/__devbridge/tests`), com o histórico das rodadas e a rodada em andamento (seção 8);
-- clique na rota do app no indicador de status para ir a outra tela (Enter navega, Esc cancela);
-- uma linha de comando de JavaScript no rodapé do console do app: Enter executa no app, Shift+Enter quebra linha, ↑/↓ trazem as expressões anteriores;
-- com "escrita" ligada: duplo clique edita a célula, "+ Registro" inclui, ✕ exclui (com confirmação);
-- botão para recarregar o app;
-- botão "Tela", que abre a tela do celular ao vivo numa janela separada (`/__devbridge/mirror`): 4 a 5 quadros por segundo, espaço pausa e o download salva o quadro em PNG. Para não pesar no celular, a captura para quando a janela é minimizada ou fechada. Se o navegador bloquear a janela, permita pop-ups de `localhost:8100`.
+Abra `http://localhost:8100/__devbridge/` no navegador do PC. No topo ficam o estado do app (clique na rota para ir a outra tela: Enter navega, Esc cancela) e as ações "Recarregar" e "Tela". A navegação lateral reúne quatro áreas (Alt+1 a Alt+4 trocam de área; o console lembra a última) e o acesso a Testes. Em telas estreitas, a navegação fica horizontal e o explorador pode ser expandido ou recolhido:
+
+- **Banco:** no explorador, o seletor do banco, a lista de tabelas com filtro (tecla `/`, que também expande o explorador) e o "Modo escrita" no rodapé; na área principal, a consulta SQL (Ctrl+Enter executa; o histórico fica no canto do cartão) e o resultado. Com o modo escrita ligado, o topo ganha uma faixa vermelha, a consulta mostra "escrita ligada" e aparecem as ações para incluir com "+ Registro" e excluir com ✕ (com confirmação); duplo clique permite editar células.
+- **Console:** os logs do app ao vivo, com filtro de nível, e uma linha de comando de JavaScript no rodapé (Enter executa no app, Shift+Enter quebra linha, ↑/↓ trazem as expressões anteriores). A navegação destaca a quantidade de erros mesmo com outra área aberta.
+- **Rede:** as requisições do app ao backend; clique numa linha para ver cabeçalhos e corpos. "Só falhas" filtra status >= 400 e erros de rede; "Locais" inclui templates e scripts do próprio servidor.
+- **Storage:** chaves e valores de `localStorage`, `sessionStorage` e NativeStorage (só leitura; gravar e apagar pelo `dvb storage` ou pelo `app_storage`).
+
+As telas complementares:
+
+- "Testes", na seção Automação da navegação, abre a tela de testes (`/__devbridge/tests`), com histórico das rodadas, indicadores, metadados recolhíveis e o formulário Nova rodada dividido em teste, sequência e casos (seção 8).
+- "Tela", no topo, abre a tela do celular ao vivo numa janela separada (`/__devbridge/mirror`), com ações Controlar, Pausar e Salvar PNG: 4 a 5 quadros por segundo, espaço pausa e Salvar PNG salva o quadro. Para não pesar no celular, a captura para quando a janela é minimizada ou fechada. Se o navegador bloquear a janela, permita pop-ups de `localhost:8100`.
 
 Não abra `http://localhost:8100/` (sem `/__devbridge/`): é o próprio app, que trava no Chrome do PC. O servidor redireciona essa URL para o console; `/?app` força o app, se for mesmo necessário.
 

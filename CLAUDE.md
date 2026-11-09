@@ -28,7 +28,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 | `src/mirror.js` | espelho da tela: capturas `screencap -p` em paralelo, só enquanto há quem peça quadros |
 | `src/ui/mirror.html` | janela do espelho (long-poll em `/api/mirror/frame`) |
 | `src/mcp.js` | servidor MCP mínimo (JSON-RPC por stdio, sem SDK) |
-| `src/ui/index.html` | console web autocontido (sem CDN) |
+| `src/ui/index.html` | console web autocontido (sem CDN); os botões segmentados de filtro espelham `<select>` escondidos (`#level`, `#storeArea`), então o JS segue lendo o `value` deles |
 | `src/ui/tests.html` | tela de testes: histórico dos relatórios e rodada ao vivo (long-poll em `/api/tests/live`) |
 | `docs/MANUAL.md` | instalação e configuração de um app do zero, na ordem dos passos; solução de problemas. Mantenha em sincronia com o README e o código |
 | `test/` | `units`, `e2e` (o client real em `node:vm`), `network` (wrappers de rede no vm contra um backend falso), `eval` (eval no vm e `app_eval` por stdio), `navigate` (rota, prefixo e redirecionamento no vm), `batch` (lote, rollback, `splitSql` e `--file`), `storage` (local/session/native no vm), `snapshot` (aparelho em memória), `input` (argumentos do adb e texto pelo DOM), `mcp` (processo real por stdio), `devbuild` (decisão de abrir o app) e `tests` (rodada com aparelho em memória que fecha e reabre o app, e MCP por stdio) |
@@ -44,7 +44,7 @@ Ferramenta de desenvolvimento para apps Cordova/AngularJS no Android, usada em L
 - **Client na ignore list do DevTools.** O wrapper de `console.*` faria todo log apontar para a linha dele no `chrome://inspect`. O servidor acrescenta `//# sourceMappingURL=/__devbridge/client.js.map` ao `client.js` e gera um map de identidade com `x_google_ignoreList`. Com isso o DevTools pula os frames do client e linka a linha do app.
 - **Segurança do banco:**
   - a leitura é o padrão;
-  - a escrita exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox da UI). Não há trava na config, porque é ferramenta de desenvolvimento num aparelho de teste;
+  - a escrita exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o "Modo escrita" da UI). Não há trava na config, porque é ferramenta de desenvolvimento num aparelho de teste;
   - a leitura roda em `readTransaction`, então o próprio plugin recusa escrita;
   - toda escrita vai para `.devbridge/sql-history.log`.
 - **Segurança do servidor:** escuta só em `127.0.0.1`. A API exige o header `X-Devbridge: 1`, que força um preflight CORS e assim barra CSRF de outras páginas abertas no navegador.
