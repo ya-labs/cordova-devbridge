@@ -58,7 +58,7 @@ function buildTools(config) {
     },
     {
       name: 'app_network_entry',
-      description: 'Detalhe de uma requisição do app_network: cabeçalhos e corpos do pedido e da resposta (JSON formatado). Credenciais aparecem como *** quando networkMask está ligado.',
+      description: 'Detalhe de uma requisição do app_network: cabeçalhos e corpos do pedido e da resposta (JSON formatado). Credenciais aparecem como *** quando networkMask está ligado (cabeçalhos de autenticação, campos de senha/token e os nomes de networkMaskFields).',
       inputSchema: {
         type: 'object',
         properties: {

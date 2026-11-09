@@ -83,6 +83,7 @@ Daí sai a config:
 - **`name` com `*`:** para bancos com parte variável (usuário, tenant). O devbridge lista os arquivos do aparelho via `adb run-as` e escolhe o que casa. Se casar com mais de um e o app ainda não abriu a conexão (antes do login, por exemplo), o comando pede `--db <arquivo.db>`.
 - **Escrita e JavaScript no app:** sempre disponíveis, sem opção na config. A escrita no banco exige um pedido explícito em cada chamada (`--write`, `db_exec` ou o checkbox "Escrita" do console) e vai para `.devbridge/sql-history.log`. O `dvb eval`, o `app_eval` do MCP e a linha de comando do console avaliam JavaScript no app; com isso o agente lê o estado do AngularJS (serviços pelo `injector`, `scope()` de um elemento) sem editar código. Toda expressão vai para `.devbridge/eval-history.log`. Configs antigas com `allowWrites` ou `allowEval` continuam válidas; os campos são ignorados.
 - **`networkMask`** (opcional, padrão `true`): esconde credenciais no inspetor de rede (cabeçalhos `Authorization`/`Cookie` e campos de senha ou token). Use `false` só se precisar ver o valor exato, por exemplo para depurar um login.
+- **`networkMaskFields`** (opcional, padrão `[]`): nomes de campo do seu app que carregam senha ou token sem ter isso no nome, por exemplo `["vparsen", "vparmac"]` num envelope SOAP. O valor desses campos também vira `***`, para o agente (MCP), o console e a tela de testes não lerem a credencial. A troca vale a partir do próximo `dvb start`.
 
 Para conferir os arquivos que existem no aparelho (exige o APK debug instalado):
 
@@ -325,7 +326,7 @@ Uma rodada:
 3. no fim de cada caso, junta os logs de erro e as requisições com falha; se o caso falhou e o teste tem `analisarResposta`, passa as respostas do período para ela;
 4. devolve o armazenamento e os bancos ao estado de antes, apagando os bancos criados na rodada (o app fecha e reabre de novo). Isso vale também para rodada com falha ou cancelada.
 
-Só uma rodada por vez. O relatório fica em `.devbridge/test-runs/<id>-<teste>.json`, com horários no fuso do PC, e guarda também os logs e o resumo das requisições (sem corpo) de cada etapa, para o histórico; o corpo só fica no inspetor de rede enquanto ele tiver a requisição. O log de cada etapa é o que o app escreveu, então não registre credenciais no console. O histórico de eventos das rodadas fica em `.devbridge/test-history.log`. Se a restauração der certo, o snapshot e a cópia do armazenamento são apagados; se falhar, ficam lá e o relatório diz como restaurar à mão.
+Só uma rodada por vez. O relatório fica em `.devbridge/test-runs/<id>-<teste>.json`, com horários no fuso do PC, e guarda também os logs e o resumo das requisições (sem corpo) de cada etapa, para o histórico; o corpo só fica no inspetor de rede enquanto ele tiver a requisição. O log de cada etapa é o que o app escreveu e o agente o lê pelo `tests_status`, então não registre credenciais no console (a máscara vale só para a rede). O histórico de eventos das rodadas fica em `.devbridge/test-history.log`. Se a restauração der certo, o snapshot e a cópia do armazenamento são apagados; se falhar, ficam lá e o relatório diz como restaurar à mão.
 
 Durante a rodada, o app manda até 256 KB de cada corpo de requisição (32 KB fora dela), para respostas grandes poderem ser analisadas.
 

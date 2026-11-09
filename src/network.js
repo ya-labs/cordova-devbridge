@@ -11,18 +11,27 @@ function matchTag(tag, query) {
 
 // Cabeçalhos e campos que carregam credencial: o valor vira "***", a chave fica.
 const SECRET_HEADERS = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$/i;
-const SECRET_KEY = '(?:senha|password|passwd|pwd|secret|token|api[_-]?key)';
-const JSON_FIELD = new RegExp(`("[^"\\\\]*${SECRET_KEY}[^"\\\\]*"\\s*:\\s*)("(?:[^"\\\\]|\\\\.)*"|-?\\d[\\d.eE+-]*|true|false|null)`, 'gi');
-const FORM_FIELD = new RegExp(`((?:^|[?&;])[^=&?#;\\s]*${SECRET_KEY}[^=&?#;\\s]*=)([^&#;\\s]*)`, 'gi');
-const XML_FIELD = new RegExp(`(<([\\w:-]*${SECRET_KEY}[\\w:-]*)(?:\\s[^>]*)?>)([^<]*)(</\\2>)`, 'gi');
+const SECRET_NAMES = ['senha', 'password', 'passwd', 'pwd', 'secret', 'token', 'api[_-]?key'];
+
+// Campos extras vêm do networkMaskFields da config (ex.: "vparsen"), com a
+// mesma regra dos padrões: nome que contém o termo, sem diferenciar maiúsculas.
+function fieldPatterns(extra = []) {
+  const key = `(?:${SECRET_NAMES.concat(extra.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('|')})`;
+  return {
+    json: new RegExp(`("[^"\\\\]*${key}[^"\\\\]*"\\s*:\\s*)("(?:[^"\\\\]|\\\\.)*"|-?\\d[\\d.eE+-]*|true|false|null)`, 'gi'),
+    form: new RegExp(`((?:^|[?&;])[^=&?#;\\s]*${key}[^=&?#;\\s]*=)([^&#;\\s]*)`, 'gi'),
+    xml: new RegExp(`(<([\\w:-]*${key}[\\w:-]*)(?:\\s[^>]*)?>)([^<]*)(</\\2>)`, 'gi'),
+  };
+}
+const DEFAULT_PATTERNS = fieldPatterns();
 
 // Por regex, e não por parse: o corpo pode chegar cortado e deixar de ser JSON válido.
-function maskText(text) {
+function maskText(text, patterns = DEFAULT_PATTERNS) {
   if (typeof text !== 'string' || !text) return text;
   return text
-    .replace(JSON_FIELD, '$1"***"')
-    .replace(FORM_FIELD, '$1***')
-    .replace(XML_FIELD, '$1***$4');
+    .replace(patterns.json, '$1"***"')
+    .replace(patterns.form, '$1***')
+    .replace(patterns.xml, '$1***$4');
 }
 
 function maskHeaders(headers) {
@@ -31,11 +40,11 @@ function maskHeaders(headers) {
   return out;
 }
 
-function part(p, mask) {
+function part(p, patterns) {
   const out = { headers: p.headers || {}, body: p.body ?? null, size: p.size || 0, truncated: !!p.truncated };
-  if (mask) {
+  if (patterns) {
     out.headers = maskHeaders(out.headers);
-    out.body = maskText(out.body);
+    out.body = maskText(out.body, patterns);
   }
   return out;
 }
@@ -48,8 +57,10 @@ function isFailure(e) {
 // Cada mudança dá um seq novo à entrada: "since" devolve também as que
 // terminaram depois da última consulta.
 class NetworkLog {
-  constructor({ mask = true, max = MAX_ENTRIES } = {}) {
+  constructor({ mask = true, maskFields = [], max = MAX_ENTRIES } = {}) {
     this.mask = mask;
+    this.maskFields = maskFields;
+    this.patterns = mask ? fieldPatterns(maskFields) : null;
     this.max = max;
     this.entries = new Map(); // chave client:id
     this.byId = new Map();
@@ -67,13 +78,13 @@ class NetworkLog {
           client: clientId,
           via: ev.via,
           method: ev.method,
-          url: this.mask ? maskText(ev.url) : ev.url,
+          url: this.mask ? maskText(ev.url, this.patterns) : ev.url,
           local: !!ev.local,
           href: ev.href,
           ts: ev.ts,
           state: 'pending',
           status: null,
-          request: part(ev.request || {}, this.mask),
+          request: part(ev.request || {}, this.patterns),
           response: null,
         };
         if (ev.test) entry.test = String(ev.test);
@@ -88,7 +99,7 @@ class NetworkLog {
         entry.ms = ev.ts - entry.ts;
         entry.state = ev.error ? 'error' : 'done';
         if (ev.error) entry.error = ev.error;
-        entry.response = part(ev.response || {}, this.mask);
+        entry.response = part(ev.response || {}, this.patterns);
       }
     }
     while (this.entries.size > this.max) {
@@ -134,4 +145,4 @@ function summary(e) {
   return out;
 }
 
-module.exports = { NetworkLog, maskText, maskHeaders, isFailure, matchTag };
+module.exports = { NetworkLog, maskText, maskHeaders, fieldPatterns, isFailure, matchTag };

@@ -8,7 +8,7 @@ const http = require('node:http');
 const { loadConfig } = require('../src/config');
 const { DevServer } = require('../src/server');
 const { Api } = require('../src/api');
-const { NetworkLog, maskText, maskHeaders } = require('../src/network');
+const { NetworkLog, maskText, maskHeaders, fieldPatterns } = require('../src/network');
 const { networkLine, networkDetail } = require('../src/format');
 const { makeApp, runClient, until } = require('./helpers');
 
@@ -23,6 +23,32 @@ test('máscara: campos de senha/token em JSON, formulário, query e XML; cabeça
   assert.equal(maskText('{"nome":"sem segredo"}'), '{"nome":"sem segredo"}');
   assert.deepEqual(maskHeaders({ authorization: 'Bearer x', cookie: 'a=1', 'content-type': 'application/json' }),
     { authorization: '***', cookie: '***', 'content-type': 'application/json' });
+});
+
+test('máscara: campos extras da config (networkMaskFields) em SOAP, JSON e formulário', () => {
+  const soap = '<soapenv:Body><urn:lnwsmobile01><urn:vparemail>ana@x</urn:vparemail><urn:vparsen>S3nh@</urn:vparsen><urn:vparmac>abc123</urn:vparmac><urn:vpartab>rprvnd</urn:vpartab></urn:lnwsmobile01></soapenv:Body>';
+  assert.equal(maskText(soap), soap, 'sem a config, vparsen não é reconhecido');
+  const p = fieldPatterns(['vparsen', 'VPARMAC', 'a.b']);
+  assert.equal(maskText(soap, p), '<soapenv:Body><urn:lnwsmobile01><urn:vparemail>ana@x</urn:vparemail><urn:vparsen>***</urn:vparsen><urn:vparmac>***</urn:vparmac><urn:vpartab>rprvnd</urn:vpartab></urn:lnwsmobile01></soapenv:Body>');
+  assert.equal(maskText('{"vparsen":"x","senha":"y","axb":"z"}', p), '{"vparsen":"***","senha":"***","axb":"z"}', 'nome com ponto é literal');
+  assert.equal(maskText('vparmac=123&n=1', p), 'vparmac=***&n=1');
+
+  const log = new NetworkLog({ maskFields: ['vparsen'] });
+  log.add('c1', [{ phase: 'start', id: 1, via: 'advanced-http', method: 'POST', url: 'http://erp/ws?vparsen=1', ts: 1, request: { body: soap } }]);
+  log.add('c1', [{ phase: 'end', id: 1, ts: 2, status: 200, response: { body: '<r><vparsen>eco</vparsen></r>' } }]);
+  const e = log.get(1);
+  assert.equal(e.url, 'http://erp/ws?vparsen=***');
+  assert.match(e.request.body, /<urn:vparsen>\*\*\*<\/urn:vparsen>/);
+  assert.equal(e.response.body, '<r><vparsen>***</vparsen></r>');
+  const off = new NetworkLog({ mask: false, maskFields: ['vparsen'] });
+  off.add('c1', [{ phase: 'start', id: 1, method: 'POST', url: 'http://erp', ts: 1, request: { body: soap } }]);
+  assert.equal(off.get(1).request.body, soap, 'networkMask false desliga também os extras');
+
+  const root = makeApp({ networkMaskFields: ['vparsen', ' vparmac '] });
+  assert.deepEqual(loadConfig({ cwd: root }).networkMaskFields, ['vparsen', 'vparmac']);
+  assert.deepEqual(loadConfig({ cwd: makeApp() }).networkMaskFields, []);
+  assert.throws(() => loadConfig({ cwd: makeApp({ networkMaskFields: 'vparsen' }) }), /networkMaskFields/);
+  assert.throws(() => loadConfig({ cwd: makeApp({ networkMaskFields: [''] }) }), /networkMaskFields/);
 });
 
 test('NetworkLog: since traz chamadas que terminaram depois, filtros e limite de entradas', () => {

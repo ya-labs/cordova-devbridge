@@ -13,6 +13,7 @@ const DEFAULTS = {
   reloadKeepRoute: true,
   reloadRestore: null,
   networkMask: true,
+  networkMaskFields: [],
   databases: {},
   defaultDb: null,
 };
@@ -62,6 +63,11 @@ function loadConfig(options = {}) {
   const config = { ...DEFAULTS, ...raw, root, file };
   config.port = Number(config.port);
   config.databases = normalizeDatabases(raw.databases);
+  const fields = config.networkMaskFields;
+  if (!Array.isArray(fields) || fields.some((f) => typeof f !== 'string' || !f.trim())) {
+    throw new Error(`${file}: "networkMaskFields" deve ser uma lista de nomes de campo (ex.: ["vparsen"]).`);
+  }
+  config.networkMaskFields = fields.map((f) => f.trim());
   config.defaultDb = raw.defaultDb || Object.keys(config.databases)[0] || null;
   config.wwwDir = path.resolve(root, config.www);
   config.platformWwwDir = path.resolve(root, config.platformWww);

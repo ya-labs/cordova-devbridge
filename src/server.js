@@ -51,7 +51,7 @@ class DevServer {
     this.pending = new Map();
     this.logs = [];
     this.logSeq = 0;
-    this.network = new NetworkLog({ mask: config.networkMask !== false });
+    this.network = new NetworkLog({ mask: config.networkMask !== false, maskFields: config.networkMaskFields });
     this.reqSeq = 0;
     this.watcher = null;
     this.tests = new TestRunner(this, tests);
