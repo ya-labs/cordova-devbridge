@@ -13,7 +13,7 @@ function matchTag(tag, query) {
 const SECRET_HEADERS = /^(authorization|proxy-authorization|cookie|set-cookie|x-api-key)$/i;
 const SECRET_NAMES = ['senha', 'password', 'passwd', 'pwd', 'secret', 'token', 'api[_-]?key'];
 
-// Campos extras vêm do networkMaskFields da config (ex.: "vparsen"), com a
+// Campos extras vêm do networkMaskFields da config (ex.: "usr_pass"), com a
 // mesma regra dos padrões: nome que contém o termo, sem diferenciar maiúsculas.
 function fieldPatterns(extra = []) {
   const key = `(?:${SECRET_NAMES.concat(extra.map((f) => f.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))).join('|')})`;

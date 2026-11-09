@@ -65,7 +65,7 @@ function loadConfig(options = {}) {
   config.databases = normalizeDatabases(raw.databases);
   const fields = config.networkMaskFields;
   if (!Array.isArray(fields) || fields.some((f) => typeof f !== 'string' || !f.trim())) {
-    throw new Error(`${file}: "networkMaskFields" deve ser uma lista de nomes de campo (ex.: ["vparsen"]).`);
+    throw new Error(`${file}: "networkMaskFields" deve ser uma lista de nomes de campo (ex.: ["usr_pass"]).`);
   }
   config.networkMaskFields = fields.map((f) => f.trim());
   config.defaultDb = raw.defaultDb || Object.keys(config.databases)[0] || null;

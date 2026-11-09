@@ -68,7 +68,7 @@ Com um banco só, a forma curta basta: `"databases": { "main": "MeuApp.db" }`.
 | `defaultDb` | alias usado quando `--db` não é informado |
 | `reloadKeepRoute` | `true` (padrão): o reload volta para a mesma tela. `false`: volta para a rota inicial, como numa abertura nova do app |
 | `networkMask` | `true` (padrão): no inspetor de rede, `Authorization`, `Cookie`, `Set-Cookie`, `X-Api-Key` e campos com senha/password/token/secret (JSON, formulário, query e XML) aparecem como `***`. `false` mostra os valores como vieram |
-| `networkMaskFields` | lista de nomes de campo do app que também levam credencial, mas não têm "senha" ou "token" no nome (ex.: `["vparsen"]`). Vale a mesma regra dos padrões: nome que contém o termo, sem diferenciar maiúsculas, em JSON, formulário, query e XML. Padrão `[]` |
+| `networkMaskFields` | lista de nomes de campo do app que também levam credencial, mas não têm "senha" ou "token" no nome (ex.: `["usr_pass"]`). Vale a mesma regra dos padrões: nome que contém o termo, sem diferenciar maiúsculas, em JSON, formulário, query e XML. Padrão `[]` |
 | `reloadRestore` | script do app (fora do `www/`) que guarda o estado antes do reload e volta para a tela depois do boot; implica reload pela rota inicial |
 | `www`, `platformWww`, `cordova` | caminhos e comando, caso fujam do padrão |
 
